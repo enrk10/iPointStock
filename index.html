@@ -1,0 +1,3133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>iPoint · Control de inventario</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Usamos una versión más estable de ZXing -->
+<script src="https://unpkg.com/@zxing/library@0.19.2/umd/index.min.js"></script>
+<style>
+  :root{
+    --bg:#EEF0EB;
+    --paper:#FBFBF9;
+    --ink:#14171A;
+    --ink-muted:#5B6259;
+    --ink-faint:#93998E;
+    --line:#D7DAD1;
+    --line-strong:#B7BCAF;
+    --accent-scan:#2C6E8E;
+    --accent-ok:#1F7A4D;
+    --accent-falta:#C23B22;
+    --accent-sobra:#8A5A2C;
+    --radius:2px;
+    --mono:'IBM Plex Mono', ui-monospace, monospace;
+    --sans:'Inter', system-ui, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:0.001s !important; transition-duration:0.001s !important;}
+  }
+  .app-shell{
+    max-width:640px;
+    margin:0 auto;
+    min-height:100vh;
+    background:var(--paper);
+    border-left:1px solid var(--line);
+    border-right:1px solid var(--line);
+  }
+  .manifest-header{
+    padding:22px 20px 16px;
+    border-bottom:2px solid var(--ink);
+  }
+  .eyebrow{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--ink-muted);
+    display:flex;
+    justify-content:space-between;
+  }
+  h1{
+    font-family:var(--sans);
+    font-size:22px;
+    font-weight:700;
+    margin:6px 0 0;
+    letter-spacing:-0.01em;
+  }
+  .https-warning{
+    margin-top:10px;
+    font-family:var(--mono);
+    font-size:11.5px;
+    color:var(--accent-falta);
+    border:1px solid var(--accent-falta);
+    padding:8px 10px;
+    background:#FBEDE9;
+  }
+  .summary-bar{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    border-bottom:1px solid var(--line);
+    font-family:var(--mono);
+  }
+  .summary-item{
+    padding:10px 6px;
+    text-align:center;
+    border-right:1px solid var(--line);
+  }
+  .summary-item:last-child{border-right:none;}
+  .summary-num{font-size:18px;font-weight:600;line-height:1.1;}
+  .summary-label{font-size:9px;color:var(--ink-muted);text-transform:uppercase;letter-spacing:0.08em;margin-top:2px;}
+  .tabs{
+    display:flex;
+    border-bottom:1px solid var(--line);
+    position:sticky;
+    top:0;
+    background:var(--paper);
+    z-index:5;
+  }
+  .tab-btn{
+    flex:1;
+    padding:12px 4px;
+    background:none;
+    border:none;
+    border-bottom:2px solid transparent;
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:0.05em;
+    text-transform:uppercase;
+    color:var(--ink-muted);
+    cursor:pointer;
+    transition:border-color 0.2s, color 0.2s;
+  }
+  .tab-btn.active{color:var(--ink);border-bottom-color:var(--ink);font-weight:600;}
+  .tab-btn:active{transform:scale(0.97);}
+  .panel{display:none;padding:18px 20px 40px;}
+  .panel.active{display:block;}
+  .upload-zone{
+    border:1.5px dashed var(--line-strong);
+    padding:26px 16px;
+    text-align:center;
+    cursor:pointer;
+    background:var(--bg);
+    transition:border-color 0.2s, background 0.2s;
+  }
+  .upload-zone:hover{border-color:var(--ink);}
+  .upload-zone:active{background:var(--line);}
+  .upload-zone svg{margin-bottom:8px;}
+  .upload-title{font-weight:600;font-size:14px;}
+  .upload-sub{font-family:var(--mono);font-size:11px;color:var(--ink-muted);margin-top:4px;}
+  input[type=file]{display:none;}
+  .db-meta{
+    margin-top:14px;
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--ink-muted);
+    line-height:1.7;
+  }
+  .db-meta b{color:var(--ink);}
+  .col-map{
+    margin-top:10px;
+    border:1px solid var(--line);
+  }
+  .col-map-row{
+    display:flex;
+    justify-content:space-between;
+    padding:6px 10px;
+    font-family:var(--mono);
+    font-size:11px;
+    border-bottom:1px solid var(--line);
+  }
+  .col-map-row:last-child{border-bottom:none;}
+  .col-map-row span:first-child{color:var(--ink-muted);}
+  .error-box{
+    margin-top:12px;
+    border:1px solid var(--accent-falta);
+    background:#FBEDE9;
+    padding:12px 14px;
+    font-size:13px;
+    line-height:1.5;
+  }
+  .error-box b{display:block;margin-bottom:4px;font-family:var(--mono);font-size:11px;letter-spacing:0.05em;text-transform:uppercase;color:var(--accent-falta);}
+  .btn{
+    font-family:var(--mono);
+    font-size:12px;
+    letter-spacing:0.03em;
+    text-transform:uppercase;
+    padding:11px 16px;
+    border:1px solid var(--ink);
+    background:var(--paper);
+    color:var(--ink);
+    cursor:pointer;
+    border-radius:var(--radius);
+    transition:background 0.15s, color 0.15s, transform 0.1s;
+    touch-action:manipulation;
+  }
+  .btn:active{transform:translateY(2px);}
+  .btn-primary{background:var(--ink);color:var(--paper);}
+  .btn-primary:active{background:#2a2e32;}
+  .btn-block{width:100%;}
+  .btn-ghost{border-color:var(--line-strong);color:var(--ink-muted);}
+  .btn-danger{border-color:var(--accent-falta);color:var(--accent-falta);}
+  .btn-row{display:flex;gap:8px;margin-top:12px;}
+  .btn-row .btn{flex:1;}
+  #panel-scan.active{display:flex;flex-direction:column;}
+  #scanResult{order:1;}
+  #hardwareScanBox{order:2;}
+  #cameraControls{order:3;}
+  #cameraArea{order:4;}
+  #searchToggleBox{order:5;}
+  #scanButtons{order:6;}
+  #scanStatus{order:6;}
+  #panel-scan > .scan-hint{order:7;}
+  #camError{order:8;}
+  .hardware-scan-box{
+    margin-top:20px;
+    margin-bottom:32px;
+    padding:12px;
+    border:1px solid var(--line);
+    background:var(--bg);
+  }
+  .hardware-scan-box .section-title{margin-bottom:8px;}
+  .hardware-mode-row{display:flex;gap:8px;margin-bottom:10px;}
+  .hardware-mode-btn{flex:1;}
+  .hardware-label{display:block;font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-muted);margin-bottom:5px;}
+  .hardware-depot-select{width:100%;margin-bottom:10px;}
+  .hardware-scan-row{display:flex;gap:8px;align-items:stretch;}
+  .hardware-scan-input{flex:1;min-width:0;}
+  .hardware-scan-row .btn{min-width:92px;}
+  .hardware-scan-hint{margin-top:7px;font-family:var(--mono);font-size:10px;color:var(--ink-muted);line-height:1.45;}
+  .hardware-scan-box.active{border-color:var(--accent-scan);}
+  .hardware-scan-input:focus{outline:2px solid var(--accent-scan);outline-offset:1px;}
+
+  .camera-controls{margin-top:0;margin-bottom:18px;display:flex;gap:8px;}
+  .search-toggle-box{margin-top:18px;margin-bottom:18px;}
+  .search-toggle-box .btn-primary{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+  .camera-controls .btn{flex:1;}
+  .camera-area{padding-top:4px;border-top:1px solid var(--line);margin-top:4px;}
+  .camera-area .scan-frame{margin-top:16px;}
+
+  .scan-frame{
+    position:relative;
+    width:min(88%, 340px);
+    aspect-ratio:4/3;
+    max-height:42vh;
+    min-height:0;
+    margin:0 auto;
+    background:#0C0E0F;
+    overflow:hidden;
+    border:1px solid var(--ink);
+    border-radius:4px;
+  }
+  .scan-video{width:100%;height:100%;object-fit:cover;display:block;}
+
+  .scan-frame + .btn-row{margin-top:14px;}
+  .scan-idle{
+    position:absolute;inset:0;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    color:#C9CDC5;font-family:var(--mono);font-size:12px;text-align:center;padding:20px;gap:14px;
+  }
+  .scan-corner{
+    position:absolute;width:26px;height:26px;border-color:#EDEFE9;
+    opacity:0.85;
+  }
+  .scan-frame.active .scan-corner{border-style:solid;}
+  .c-tl{top:14px;left:14px;border-width:2px 0 0 2px;}
+  .c-tr{top:14px;right:14px;border-width:2px 2px 0 0;}
+  .c-bl{bottom:14px;left:14px;border-width:0 0 2px 2px;}
+  .c-br{bottom:14px;right:14px;border-width:0 2px 2px 0;}
+  .scan-laser{
+    position:absolute;left:8%;right:8%;height:2px;
+    background:linear-gradient(90deg, transparent, #6FD3A0, transparent);
+    box-shadow:0 0 8px 1px rgba(111,211,160,0.7);
+    top:50%;
+    animation:laserMove 1.8s ease-in-out infinite;
+    display:none;
+  }
+  .scan-frame.active .scan-laser{display:block;}
+  @keyframes laserMove{
+    0%{top:18%;} 50%{top:82%;} 100%{top:18%;}
+  }
+  .scan-hint{
+    text-align:center;font-family:var(--mono);font-size:11px;color:var(--ink-muted);margin-top:10px;
+  }
+  .cam-error{
+    margin-top:12px;border:1px solid var(--accent-falta);background:#FBEDE9;padding:12px 14px;font-size:13px;line-height:1.5;
+  }
+  .ticket{
+    margin-top:16px;
+    border:1px solid var(--ink);
+    background:var(--paper);
+    position:relative;
+  }
+  .ticket::before{
+    content:"";
+    position:absolute;top:-1px;left:0;right:0;height:1px;
+    background-image:repeating-linear-gradient(90deg, var(--ink) 0 6px, transparent 6px 12px);
+  }
+  .ticket-head{
+    padding:14px 16px 10px;
+    border-bottom:1px dashed var(--line-strong);
+    display:flex;justify-content:space-between;align-items:flex-start;gap:10px;
+  }
+  .ticket-articulo{font-family:var(--mono);font-size:13px;color:var(--ink-muted);}
+  .ticket-desc{font-size:16px;font-weight:600;margin-top:3px;line-height:1.3;}
+  .deposito-badge{
+    font-family:var(--mono);font-size:10.5px;letter-spacing:0.04em;text-transform:uppercase;
+    border:1px solid var(--line-strong);padding:4px 8px;white-space:nowrap;color:var(--ink-muted);
+  }
+  .ticket-body{padding:14px 16px;}
+  .field-grid{display:flex;gap:16px;margin-bottom:14px;}
+  .field{flex:1;}
+  .field-label{font-family:var(--mono);font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--ink-muted);margin-bottom:4px;}
+  .field-value{font-family:var(--mono);font-size:22px;font-weight:600;}
+  .count-input{
+    width:100%;font-family:var(--mono);font-size:22px;font-weight:600;
+    border:1px solid var(--ink);padding:8px 10px;background:var(--bg);color:var(--ink);
+    border-radius:var(--radius);
+  }
+  .count-input:focus{outline:2px solid var(--accent-scan);outline-offset:1px;}
+  .status-pill{
+    display:inline-flex;align-items:center;gap:6px;
+    font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:0.03em;text-transform:uppercase;
+    padding:8px 12px;border:1px solid var(--line-strong);color:var(--ink-muted);width:100%;
+    justify-content:center;
+  }
+  .status-pill.pending{color:var(--ink-muted);}
+  .status-pill.ok{color:var(--accent-ok);border-color:var(--accent-ok);background:#EBF5EF;}
+  .status-pill.falta{color:var(--accent-falta);border-color:var(--accent-falta);background:#FBEDE9;}
+  .status-pill.sobra{color:var(--accent-sobra);border-color:var(--accent-sobra);background:#F7EFE6;}
+  .match-list{margin-top:14px;border:1px solid var(--line);}
+  .match-row{
+    padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer;
+    display:flex;justify-content:space-between;font-size:13px;
+  }
+  .match-row:hover{background:var(--bg);}
+  .match-row:last-child{border-bottom:none;}
+  .match-row span:last-child{font-family:var(--mono);color:var(--ink-muted);}
+  .not-found{
+    margin-top:16px;border:1px solid var(--line-strong);padding:16px;text-align:center;
+    font-family:var(--mono);font-size:12.5px;color:var(--ink-muted);line-height:1.6;
+  }
+  .not-found b{color:var(--ink);display:block;font-size:14px;margin-bottom:6px;font-family:var(--sans);}
+  .search-input{
+    width:100%;font-family:var(--mono);font-size:14px;padding:11px 12px;
+    border:1px solid var(--ink);background:var(--paper);border-radius:var(--radius);
+  }
+  .search-input:focus{outline:2px solid var(--accent-scan);outline-offset:1px;}
+  .result-row{
+    padding:12px 4px;border-bottom:1px solid var(--line);cursor:pointer;
+  }
+  .result-row:hover{background:var(--bg);}
+  .result-top{display:flex;justify-content:space-between;font-size:14px;font-weight:600;}
+  .result-bottom{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--ink-muted);margin-top:3px;}
+  .deposito-group{margin-bottom:22px;}
+  .deposito-title{
+    font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;
+    display:flex;justify-content:space-between;padding-bottom:6px;border-bottom:1px solid var(--ink);margin-bottom:8px;
+  }
+  .item-row{
+    display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);
+  }
+  .item-info{flex:1;min-width:0;}
+  .item-desc{font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .item-meta{font-family:var(--mono);font-size:10.5px;color:var(--ink-muted);margin-top:2px;}
+  .item-count-input{
+    width:66px;font-family:var(--mono);font-size:14px;text-align:center;padding:6px 4px;
+    border:1px solid var(--line-strong);border-radius:var(--radius);
+  }
+  .item-status{width:10px;height:10px;border-radius:50%;flex-shrink:0;background:var(--line-strong);}
+  .item-status.ok{background:var(--accent-ok);}
+  .item-status.falta{background:var(--accent-falta);}
+  .item-status.sobra{background:var(--accent-sobra);}
+  .empty-state{
+    text-align:center;padding:40px 20px;color:var(--ink-muted);font-family:var(--mono);font-size:12.5px;line-height:1.6;
+  }
+  .toast{
+    position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(8px);
+    background:var(--ink);color:var(--paper);font-family:var(--mono);font-size:12.5px;
+    padding:10px 16px;border-radius:var(--radius);opacity:0;pointer-events:none;
+    transition:opacity 0.2s ease, transform 0.2s ease;z-index:50;max-width:88%;text-align:center;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .section-title{font-size:13px;font-weight:600;margin:0 0 10px;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em;color:var(--ink-muted);}
+  .btn-scan-toggle{display:flex;gap:8px;}
+  .btn-scan-toggle .btn{flex:1;}
+  .scan-status{
+    margin-top:8px;
+    font-family:var(--mono);
+    font-size:11px;
+    color:var(--ink-muted);
+    text-align:center;
+    min-height:20px;
+  }
+  .article-group{margin-top:16px;border:1px solid var(--ink);background:var(--paper);}
+  .article-group-head{padding:14px 16px;border-bottom:1px dashed var(--line-strong);display:flex;justify-content:space-between;gap:12px;align-items:flex-start;}
+  .article-group-title{min-width:0;}
+  .article-group-code{font-family:var(--mono);font-size:12px;color:var(--ink-muted);}
+  .article-group-desc{font-size:16px;font-weight:600;line-height:1.3;margin-top:3px;}
+  .article-group-total{font-family:var(--mono);text-align:right;white-space:nowrap;}
+  .article-group-total .label{font-size:9px;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.06em;}
+  .article-group-total .value{font-size:22px;font-weight:600;}
+  .depot-count-row{display:grid;grid-template-columns:minmax(0,1fr) 72px 92px;gap:8px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);}
+  .depot-count-row:last-child{border-bottom:none;}
+  .depot-count-name{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.03em;}
+  .depot-count-stock{font-family:var(--mono);font-size:11px;color:var(--ink-muted);text-align:right;}
+  .depot-count-input{width:100%;font-family:var(--mono);font-size:16px;text-align:center;padding:7px 4px;border:1px solid var(--line-strong);border-radius:var(--radius);}
+  .article-status{margin:12px 16px 14px;}
+  .article-actions{padding:0 16px 14px;}
+  .article-summary-line{display:flex;justify-content:space-between;gap:10px;padding:8px 16px;background:var(--bg);font-family:var(--mono);font-size:11px;border-bottom:1px solid var(--line);}
+  .article-summary-line b{font-weight:600;}
+
+  .search-toggle-box{margin-top:20px;padding-top:18px;border-top:1px solid var(--line);}
+  .quick-search-area{margin-top:10px;}
+  .global-dashboard{margin-top:18px;}
+
+  .control-dashboard{
+    margin:14px 0 20px;
+    padding:0;
+    border:0;
+    background:transparent;
+  }
+  .dashboard-shell{
+    overflow:hidden;
+    border:1px solid var(--line);
+    border-radius:20px;
+    background:var(--paper);
+    box-shadow:var(--shadow);
+  }
+  .dashboard-top{
+    display:flex;
+    align-items:flex-end;
+    justify-content:space-between;
+    gap:16px;
+    padding:18px 18px 14px;
+  }
+  .dashboard-kicker{
+    font-family:var(--sans);
+    font-size:12px;
+    font-weight:600;
+    color:var(--ink-muted);
+  }
+  .dashboard-primary{
+    margin-top:3px;
+    font-family:var(--sans);
+    font-size:30px;
+    line-height:1;
+    font-weight:700;
+    letter-spacing:-.025em;
+    color:var(--ink);
+  }
+  .dashboard-primary small{
+    margin-left:5px;
+    font-size:13px;
+    font-weight:500;
+    color:var(--ink-muted);
+    letter-spacing:0;
+  }
+  .dashboard-percent{
+    font-family:var(--sans);
+    font-size:34px;
+    line-height:1;
+    font-weight:700;
+    letter-spacing:-.03em;
+    color:var(--accent);
+  }
+  .dashboard-progress{
+    height:7px;
+    margin:0 18px;
+    overflow:hidden;
+    border-radius:999px;
+    background:#E5E5EA;
+  }
+  .dashboard-progress span{
+    display:block;
+    height:100%;
+    border-radius:999px;
+    background:var(--accent);
+    transition:width .25s ease;
+  }
+  .dashboard-stats{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    margin-top:16px;
+    border-top:1px solid var(--line);
+  }
+  .dashboard-stat{
+    min-width:0;
+    padding:14px 10px 15px;
+    text-align:center;
+    border-right:1px solid var(--line);
+  }
+  .dashboard-stat:last-child{border-right:0;}
+  .dashboard-stat strong{
+    display:block;
+    font-family:var(--sans);
+    font-size:20px;
+    line-height:1.1;
+    font-weight:700;
+    font-variant-numeric:tabular-nums;
+  }
+  .dashboard-stat span{
+    display:block;
+    margin-top:4px;
+    font-family:var(--sans);
+    font-size:10px;
+    line-height:1.25;
+    color:var(--ink-muted);
+  }
+  .dashboard-stat.diff strong{color:#C93400;}
+  .dashboard-stat.ok strong{color:#248A3D;}
+  .control-dashboard-empty{
+    padding:16px;
+    border:1px solid var(--line);
+    border-radius:16px;
+    background:var(--paper);
+    font-family:var(--sans);
+    font-size:12px;
+    color:var(--ink-muted);
+  }
+  #unifiedSearchResults{margin-top:10px;}
+  .progress-help{font-size:10px;color:var(--ink-muted);margin:8px 0 0;line-height:1.45;}
+
+  .control-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;}
+  .control-subtitle{font-family:var(--mono);font-size:11px;color:var(--ink-muted);}
+  .control-progress{font-family:var(--mono);font-size:18px;font-weight:600;}
+  .control-filters{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;}
+  .control-group{border:1px solid var(--line);margin-bottom:10px;background:var(--paper);}
+  .control-group summary{cursor:pointer;list-style:none;padding:11px 12px;font-family:var(--mono);font-size:12px;font-weight:600;display:flex;justify-content:space-between;gap:10px;}
+  .control-group summary::-webkit-details-marker{display:none;}
+  .control-group summary:after{content:'+';font-size:16px;}
+  .control-group[open] summary:after{content:'−';}
+  .control-line{padding:8px 12px 8px 20px;border-top:1px solid var(--line);}
+  .control-line summary{padding:8px 0;font-size:11px;font-weight:600;}
+  .control-item{display:grid;grid-template-columns:minmax(0,1fr) 62px 58px;gap:8px;align-items:center;padding:8px 0;border-top:1px dashed var(--line);font-size:12px;}
+  .control-item:first-child{border-top:none;}
+  .control-item-desc{min-width:0;}
+  .control-item-title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .control-item-meta{font-family:var(--mono);font-size:9.5px;color:var(--ink-muted);margin-top:2px;}
+  .control-stock,.control-count{font-family:var(--mono);font-size:11px;text-align:right;}
+  .control-count.ok{color:var(--accent-ok);}
+  .control-count.pending{color:var(--ink-muted);}
+  @media(max-width:480px){
+    .dashboard-top{padding:16px 16px 13px;}
+    .dashboard-primary{font-size:27px;}
+    .dashboard-percent{font-size:30px;}
+    .dashboard-progress{margin:0 16px;}
+    .dashboard-stat{padding:13px 6px 14px;}
+    .dashboard-stat strong{font-size:18px;}
+    .dashboard-stat span{font-size:9px;}
+  }
+  @media(max-width:480px){.control-filters{grid-template-columns:1fr;} .control-item{grid-template-columns:minmax(0,1fr) 52px 52px;gap:6px;} .control-item-title{font-size:11.5px;}}
+  @media (max-width:480px){
+    .hardware-scan-box{margin-top:18px;margin-bottom:24px;}
+    .hardware-scan-row{flex-direction:column;}
+    .hardware-scan-row .btn{width:100%;}
+    .scan-frame{width:min(88%, 320px);max-height:none;}
+    .depot-count-row{grid-template-columns:minmax(0,1fr) 64px 82px;}
+    .article-group-head{padding:12px;}
+    .depot-count-row{padding:9px 12px;}
+    .article-actions{padding:0 12px 12px;}
+    .article-summary-line{padding:8px 12px;}
+    .article-status{margin-left:12px;margin-right:12px;}
+
+    .manifest-header{padding:16px 14px;}
+    .panel{padding:14px 14px 32px;}
+    .summary-item{padding:8px 4px;}
+    .summary-num{font-size:16px;}
+    .field-grid{flex-direction:column;gap:8px;}
+    .ticket-head{flex-wrap:wrap;}
+  }
+  
+  /* Modo oscuro para mejor contraste al escanear */
+  .scan-frame.active .scan-corner{
+    border-color: #6FD3A0;
+  }
+
+  .search-toggle-box{margin-top:22px;padding-top:18px;border-top:1px solid var(--line);}
+  .camera-controls{margin-top:22px;padding-top:18px;border-top:1px solid var(--line);}
+  .camera-area{margin-top:14px;}
+  .control-filter-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
+  .control-progress{display:flex;justify-content:space-between;font-family:var(--mono);font-size:12px;padding:10px 0;border-bottom:1px solid var(--line);margin-bottom:10px;}
+  .control-group,.control-line{border:1px solid var(--line);margin-bottom:8px;background:var(--paper);}
+  .control-group summary:after,.control-line summary:after{content:'+';font-size:16px;font-weight:400;}
+  .control-group[open] > summary:after,.control-line[open] > summary:after{content:'−';}
+  .control-group summary,.control-line summary{list-style:none;cursor:pointer;padding:11px 12px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;}
+  .control-group summary::-webkit-details-marker,.control-line summary::-webkit-details-marker{display:none;}
+  .control-line{margin:0 8px 8px;}
+  .control-item{display:grid;grid-template-columns:1fr 60px 60px;gap:8px;align-items:center;padding:9px 10px;border-top:1px solid var(--line);font-size:12px;}
+  .control-item-title{font-weight:500;line-height:1.3;}
+  .control-item-meta{font-family:var(--mono);font-size:10px;color:var(--ink-muted);margin-top:2px;}
+  .control-stock,.control-count{font-family:var(--mono);text-align:right;font-size:12px;}
+  .control-count.ok{color:var(--accent-ok);font-weight:600;}
+  .control-count.pending{color:var(--ink-muted);}
+  @media(max-width:480px){.control-filter-grid{grid-template-columns:1fr;}.control-item{grid-template-columns:1fr 50px 58px;}}
+
+/* =========================================================
+   Apple-inspired visual redesign
+   Visual-only layer: application logic remains unchanged.
+   ========================================================= */
+:root{
+  --bg:#F5F5F7;
+  --paper:#FFFFFF;
+  --ink:#1D1D1F;
+  --ink-muted:#6E6E73;
+  --ink-faint:#8E8E93;
+  --line:#E5E5EA;
+  --line-strong:#D2D2D7;
+  --accent:#0071E3;
+  --accent-scan:#0071E3;
+  --accent-ok:#34C759;
+  --accent-falta:#FF9F0A;
+  --accent-sobra:#FF9F0A;
+  --radius:18px;
+  --radius-sm:10px;
+  --shadow:0 1px 2px rgba(0,0,0,.03),0 6px 18px rgba(0,0,0,.04);
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue",Arial,sans-serif;
+  --mono:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue",Arial,sans-serif;
+}
+
+html{
+  background:var(--bg);
+  scroll-behavior:smooth;
+}
+
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:var(--sans);
+  font-size:15px;
+  line-height:1.45;
+}
+
+button,input,select{
+  font:inherit;
+}
+
+button{
+  -webkit-tap-highlight-color:transparent;
+}
+
+.app-shell{
+  width:min(100%,720px);
+  max-width:720px;
+  min-height:100vh;
+  margin:0 auto;
+  background:var(--bg);
+  border:0;
+  padding-bottom:24px;
+}
+
+/* Fixed glass header */
+.manifest-header{
+  position:sticky;
+  top:0;
+  z-index:30;
+  padding:16px 20px 14px;
+  border:0;
+  background:rgba(245,245,247,.82);
+  -webkit-backdrop-filter:blur(20px) saturate(180%);
+  backdrop-filter:blur(20px) saturate(180%);
+}
+
+.eyebrow{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  font-family:var(--sans);
+  font-size:12px;
+  font-weight:600;
+  letter-spacing:0;
+  text-transform:none;
+  color:var(--ink-muted);
+}
+
+h1{
+  margin:4px 0 0;
+  font-size:30px;
+  line-height:1.08;
+  font-weight:700;
+  letter-spacing:-.02em;
+  color:var(--ink);
+}
+
+.https-warning{
+  margin-top:12px;
+  padding:10px 12px;
+  border:0;
+  border-radius:12px;
+  background:#FFF3E8;
+  color:#C93400;
+  font-family:var(--sans);
+  font-size:12px;
+}
+
+/* Summary becomes a soft card */
+.summary-bar{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:1px;
+  margin:0 14px 12px;
+  overflow:hidden;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:var(--line);
+  box-shadow:var(--shadow);
+  font-family:var(--sans);
+}
+
+.summary-item{
+  padding:12px 6px;
+  text-align:center;
+  border:0;
+  background:var(--paper);
+}
+
+.summary-num{
+  font-size:20px;
+  font-weight:700;
+  line-height:1.1;
+  letter-spacing:-.02em;
+}
+
+.summary-label{
+  margin-top:3px;
+  font-size:10px;
+  font-weight:500;
+  color:var(--ink-muted);
+  text-transform:none;
+  letter-spacing:0;
+}
+
+/* iOS-style segmented control */
+.tabs{
+  position:sticky;
+  top:78px;
+  z-index:20;
+  display:flex;
+  gap:3px;
+  margin:0 14px 4px;
+  padding:3px;
+  border:0;
+  border-radius:13px;
+  background:#E8E8ED;
+  box-shadow:none;
+}
+
+.tab-btn{
+  flex:1;
+  min-width:0;
+  padding:8px 5px;
+  border:0;
+  border-radius:10px;
+  background:transparent;
+  color:var(--ink-muted);
+  font-family:var(--sans);
+  font-size:12px;
+  font-weight:600;
+  letter-spacing:0;
+  text-transform:none;
+  line-height:1.2;
+  transition:background .18s ease,box-shadow .18s ease,color .18s ease;
+}
+
+.tab-btn.active{
+  color:var(--ink);
+  background:#fff;
+  border:0;
+  box-shadow:0 1px 3px rgba(0,0,0,.10);
+}
+
+.tab-btn:active{
+  transform:scale(.98);
+}
+
+/* Panels */
+.panel{
+  display:none;
+  padding:18px 16px 40px;
+}
+
+.panel.active{
+  display:block;
+}
+
+.section-title{
+  margin:0 0 10px;
+  color:var(--ink-muted);
+  font-family:var(--sans);
+  font-size:13px;
+  font-weight:600;
+  letter-spacing:0;
+  text-transform:none;
+}
+
+/* Shared surfaces */
+.hardware-scan-box,
+.article-group,
+.ticket,
+.control-group,
+.control-line,
+.upload-zone,
+.col-map{
+  border:1px solid var(--line);
+  border-radius:18px;
+  background:var(--paper);
+  box-shadow:var(--shadow);
+}
+
+.hardware-scan-box{
+  margin:12px 0 18px;
+  padding:16px;
+}
+
+.hardware-scan-box.active{
+  border-color:rgba(0,113,227,.45);
+}
+
+.hardware-label{
+  display:block;
+  margin-bottom:6px;
+  color:var(--ink-muted);
+  font-family:var(--sans);
+  font-size:12px;
+  font-weight:500;
+  letter-spacing:0;
+  text-transform:none;
+}
+
+.hardware-scan-row{
+  display:flex;
+  gap:8px;
+}
+
+.hardware-scan-hint,
+.scan-hint,
+.scan-status,
+.control-subtitle,
+.db-meta,
+.upload-sub,
+.hardware-scan-hint{
+  font-family:var(--sans);
+  color:var(--ink-muted);
+  letter-spacing:0;
+}
+
+/* Inputs */
+.search-input,
+.count-input,
+.item-count-input,
+.depot-count-input{
+  border:1px solid var(--line-strong);
+  border-radius:10px;
+  background:#fff;
+  color:var(--ink);
+  box-shadow:none;
+}
+
+.search-input{
+  padding:11px 12px;
+  font-size:15px;
+}
+
+.search-input:focus,
+.count-input:focus,
+.item-count-input:focus,
+.depot-count-input:focus,
+.hardware-scan-input:focus{
+  outline:3px solid rgba(0,113,227,.16);
+  outline-offset:0;
+  border-color:var(--accent);
+}
+
+.count-input{
+  font-family:var(--sans);
+  font-size:22px;
+  font-weight:700;
+}
+
+.depot-count-input{
+  font-family:var(--sans);
+  font-size:17px;
+  font-weight:600;
+}
+
+/* Buttons */
+.btn{
+  min-height:42px;
+  padding:10px 16px;
+  border:0;
+  border-radius:10px;
+  background:#E8E8ED;
+  color:var(--ink);
+  font-family:var(--sans);
+  font-size:14px;
+  font-weight:600;
+  letter-spacing:0;
+  text-transform:none;
+  transition:transform .12s ease,opacity .12s ease,background .15s ease;
+}
+
+.btn:hover{
+  background:#DDDEE3;
+}
+
+.btn:active{
+  transform:scale(.98);
+}
+
+.btn-primary{
+  border:0;
+  background:var(--accent);
+  color:#fff;
+  font-weight:700;
+}
+
+.btn-primary:hover{
+  background:#0068D0;
+}
+
+.btn-primary:active{
+  background:#005FC0;
+}
+
+.btn-ghost{
+  border:1px solid var(--line-strong);
+  background:#fff;
+  color:var(--ink);
+}
+
+.btn-danger{
+  border:0;
+  background:#FFF3E8;
+  color:#C93400;
+}
+
+.btn-row{
+  gap:8px;
+}
+
+/* Scan area */
+.camera-controls,
+.search-toggle-box{
+  margin-top:16px;
+  padding-top:16px;
+  border-top:1px solid var(--line);
+}
+
+.camera-area{
+  margin-top:12px;
+  padding-top:12px;
+  border-top:0;
+}
+
+.scan-frame{
+  width:min(92%,360px);
+  border:0;
+  border-radius:18px;
+  background:#111;
+  box-shadow:0 8px 24px rgba(0,0,0,.12);
+}
+
+.scan-frame.active .scan-corner{
+  border-color:#fff;
+}
+
+.scan-laser{
+  background:linear-gradient(90deg,transparent,#0071E3,transparent);
+  box-shadow:0 0 10px rgba(0,113,227,.65);
+}
+
+.scan-idle{
+  font-family:var(--sans);
+}
+
+/* Result cards */
+.ticket,
+.article-group{
+  margin-top:12px;
+  overflow:hidden;
+  position:relative;
+}
+
+.ticket::before{
+  display:none;
+}
+
+.ticket-head,
+.article-group-head{
+  padding:16px;
+  border-bottom:1px solid var(--line);
+}
+
+.ticket-articulo,
+.article-group-code{
+  font-family:var(--sans);
+  font-size:12px;
+  color:var(--ink-muted);
+}
+
+.ticket-desc,
+.article-group-desc{
+  margin-top:3px;
+  font-size:17px;
+  line-height:1.25;
+  font-weight:700;
+  letter-spacing:-.01em;
+}
+
+.deposito-badge{
+  padding:5px 9px;
+  border:0;
+  border-radius:6px;
+  background:#F2F2F7;
+  color:var(--ink-muted);
+  font-family:var(--sans);
+  font-size:11px;
+  font-weight:600;
+  letter-spacing:0;
+  text-transform:none;
+}
+
+.ticket-body{
+  padding:16px;
+}
+
+.field-label,
+.article-group-total .label{
+  font-family:var(--sans);
+  font-size:11px;
+  font-weight:500;
+  color:var(--ink-muted);
+  letter-spacing:0;
+  text-transform:none;
+}
+
+.field-value,
+.article-group-total .value{
+  font-family:var(--sans);
+  font-size:28px;
+  font-weight:700;
+  letter-spacing:-.02em;
+}
+
+.article-summary-line{
+  padding:9px 16px;
+  border-bottom:1px solid var(--line);
+  background:#F8F8FA;
+  font-family:var(--sans);
+  font-size:12px;
+  color:var(--ink-muted);
+}
+
+.depot-count-row{
+  padding:12px 16px;
+  border-bottom:1px solid var(--line);
+}
+
+.depot-count-name{
+  font-family:var(--sans);
+  font-size:13px;
+  font-weight:600;
+  letter-spacing:0;
+  text-transform:none;
+}
+
+.depot-count-stock{
+  font-family:var(--sans);
+  font-size:11px;
+  color:var(--ink-muted);
+}
+
+.article-status{
+  margin:12px 16px 14px;
+}
+
+.status-pill{
+  min-height:38px;
+  padding:9px 12px;
+  border:0;
+  border-radius:10px;
+  font-family:var(--sans);
+  font-size:13px;
+  font-weight:600;
+  letter-spacing:0;
+  text-transform:none;
+}
+
+.status-pill.pending{
+  background:#F2F2F7;
+  color:var(--ink-muted);
+}
+
+.status-pill.ok{
+  border:0;
+  background:#EAFBF0;
+  color:#248A3D;
+}
+
+.status-pill.falta,
+.status-pill.sobra{
+  border:0;
+  background:#FFF3E8;
+  color:#C93400;
+}
+
+/* Search results */
+.match-list{
+  margin-top:12px;
+  overflow:hidden;
+  border:1px solid var(--line);
+  border-radius:14px;
+  box-shadow:var(--shadow);
+}
+
+.match-row{
+  padding:12px 14px;
+  border-bottom:1px solid var(--line);
+  font-size:14px;
+}
+
+.match-row:hover,
+.result-row:hover{
+  background:#F8F8FA;
+}
+
+.search-toggle-box .btn-primary{
+  background:var(--accent);
+  color:#fff;
+  border-color:transparent;
+}
+
+/* Control screen */
+.control-head{
+  margin-bottom:14px;
+}
+
+.control-progress{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:12px 0;
+  margin-bottom:12px;
+  border-bottom:0;
+  font-family:var(--sans);
+  font-size:13px;
+  color:var(--ink-muted);
+}
+
+.control-progress strong,
+.control-progress #controlProgress{
+  color:var(--accent);
+  font-size:20px;
+  font-weight:700;
+  letter-spacing:-.02em;
+}
+
+.control-filter-grid{
+  gap:8px;
+  margin-bottom:10px;
+}
+
+.control-group,
+.control-line{
+  margin-bottom:10px;
+  overflow:hidden;
+}
+
+.control-group summary,
+.control-line summary{
+  padding:13px 14px;
+  font-family:var(--sans);
+  font-size:13px;
+  font-weight:600;
+  letter-spacing:0;
+  color:var(--ink);
+}
+
+.control-group summary:after,
+.control-line summary:after{
+  color:var(--ink-muted);
+}
+
+.control-line{
+  margin:0 8px 8px;
+  border-radius:12px;
+  box-shadow:none;
+  background:#F8F8FA;
+}
+
+.control-item{
+  padding:10px 12px;
+  border-top:1px solid var(--line);
+  font-size:13px;
+}
+
+.control-item-meta,
+.control-stock,
+.control-count{
+  font-family:var(--sans);
+  font-size:11px;
+}
+
+.control-count.ok{
+  color:#248A3D;
+}
+
+.control-count.pending{
+  color:var(--ink-muted);
+}
+
+/* Database screen */
+.upload-zone{
+  padding:28px 18px;
+  border:1.5px dashed var(--line-strong);
+  background:#fff;
+}
+
+.upload-zone:hover{
+  border-color:var(--accent);
+  background:#FBFCFF;
+}
+
+.upload-title{
+  font-size:15px;
+  font-weight:600;
+}
+
+.upload-sub{
+  margin-top:5px;
+  font-size:12px;
+}
+
+.db-meta{
+  margin-top:14px;
+  padding:14px 16px;
+  border-radius:14px;
+  background:#F8F8FA;
+  font-size:13px;
+  line-height:1.6;
+}
+
+.col-map{
+  overflow:hidden;
+}
+
+.col-map-row{
+  padding:10px 12px;
+  border-bottom:1px solid var(--line);
+  font-family:var(--sans);
+  font-size:12px;
+}
+
+.col-map-row span:first-child{
+  color:var(--ink-muted);
+}
+
+.error-box,
+.cam-error{
+  margin-top:12px;
+  padding:13px 14px;
+  border:0;
+  border-radius:12px;
+  background:#FFF3E8;
+  color:#C93400;
+  font-family:var(--sans);
+}
+
+.error-box b{
+  margin-bottom:4px;
+  font-family:var(--sans);
+  font-size:12px;
+  letter-spacing:0;
+  text-transform:none;
+  color:#C93400;
+}
+
+/* Toast */
+.toast{
+  bottom:22px;
+  max-width:88%;
+  padding:11px 16px;
+  border-radius:12px;
+  background:rgba(29,29,31,.94);
+  color:#fff;
+  font-family:var(--sans);
+  font-size:13px;
+  font-weight:500;
+  box-shadow:0 8px 24px rgba(0,0,0,.16);
+}
+
+/* Mobile refinements */
+@media(max-width:480px){
+  .manifest-header{
+    padding:14px 14px 12px;
+  }
+
+  h1{
+    font-size:28px;
+  }
+
+  .tabs{
+    top:72px;
+    margin-left:10px;
+    margin-right:10px;
+  }
+
+  .tab-btn{
+    font-size:11px;
+    padding:8px 3px;
+  }
+
+  .panel{
+    padding:16px 12px 32px;
+  }
+
+  .summary-bar{
+    margin-left:10px;
+    margin-right:10px;
+  }
+
+  .summary-num{
+    font-size:18px;
+  }
+
+  .summary-label{
+    font-size:9px;
+  }
+
+  .hardware-scan-box{
+    padding:14px;
+    border-radius:16px;
+  }
+
+  .article-group-head,
+  .ticket-head,
+  .ticket-body{
+    padding:14px;
+  }
+
+  .depot-count-row{
+    padding:10px 12px;
+  }
+
+  .article-actions{
+    padding:0 12px 12px;
+  }
+
+  .article-summary-line{
+    padding:8px 12px;
+  }
+
+  .article-status{
+    margin-left:12px;
+    margin-right:12px;
+  }
+}
+
+/* Respect reduced motion */
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto;}
+  .scan-laser{animation:none !important;}
+}
+
+.cloud-status{display:inline-flex;align-items:center;gap:7px;margin-top:10px;padding:7px 10px;border-radius:999px;font-size:12px;font-weight:600;background:#F2F2F7;color:#5B6259;border:1px solid rgba(0,0,0,.06)}
+.cloud-status.syncing{background:#FFF8E8;color:#8A5A00}.cloud-status.ok{background:#EAFBF0;color:#248A3D}.cloud-status.offline,.cloud-status.error{background:#FFF0EF;color:#C93400}
+.cloud-dot{width:7px;height:7px;border-radius:50%;background:currentColor;display:inline-block}
+
+
+/* Control ordenado según recorrido físico del depósito */
+.control-major{border-radius:16px;background:var(--paper);box-shadow:var(--shadow);}
+.control-major>summary{font-size:14px;font-weight:700;padding:15px 16px;}
+.control-major-body{padding:0 8px 8px;}
+.control-priority-line{background:#F8F8FA;border-radius:12px;margin:0 0 8px;}
+.control-priority-line>summary{font-size:13px;font-weight:700;}
+.control-item-ordered{grid-template-columns:minmax(0,1fr) 64px 82px;gap:8px;align-items:center;}
+.control-item-ordered .control-stock,.control-item-ordered .control-count{display:flex;flex-direction:column;align-items:flex-end;line-height:1.15;}
+.control-item-ordered small{font-size:9px;color:var(--ink-muted);font-weight:500;}
+.control-item-ordered b{font-size:13px;margin-top:2px;}
+.control-item-ordered em{font-style:normal;font-size:9px;margin-top:2px;}
+@media(max-width:480px){.control-item-ordered{grid-template-columns:minmax(0,1fr) 55px 72px;}.control-major-body{padding:0 5px 6px;}}
+
+/* Alineación fija de avance y botón +/- en Control */
+.control-major > summary,
+.control-priority-line > summary{
+  display:grid !important;
+  grid-template-columns:minmax(0,1fr) 64px 22px;
+  align-items:center;
+  column-gap:10px;
+}
+
+.control-major > summary > span:first-child,
+.control-priority-line > summary > span:first-child{
+  min-width:0;
+  text-align:left;
+}
+
+.control-major > summary > span:nth-child(2),
+.control-priority-line > summary > span:nth-child(2){
+  width:64px;
+  justify-self:end;
+  text-align:right;
+  font-variant-numeric:tabular-nums;
+}
+
+.control-major > summary:after,
+.control-priority-line > summary:after{
+  width:22px;
+  justify-self:end;
+  text-align:center;
+}
+
+@media(max-width:480px){
+  .control-major > summary,
+  .control-priority-line > summary{
+    grid-template-columns:minmax(0,1fr) 58px 20px;
+    column-gap:8px;
+  }
+
+  .control-major > summary > span:nth-child(2),
+  .control-priority-line > summary > span:nth-child(2){
+    width:58px;
+  }
+}
+
+</style>
+</head>
+<body>
+<div class="app-shell">
+
+  <div class="manifest-header">
+    <div class="eyebrow"><span>iPoint</span><span id="todayDate"></span></div>
+    <h1>Control de inventario</h1>
+    <div id="cloudStatus" class="cloud-status"><span class="cloud-dot"></span><span id="cloudStatusText">Conectando con Supabase…</span></div>
+    <div id="httpsWarning" class="https-warning" style="display:none;">
+      ⚠ Esta página no se está sirviendo por HTTPS. Safari en iPhone bloquea el acceso a la cámara fuera de HTTPS. Alojá el archivo en un hosting con HTTPS para poder escanear.
+    </div>
+  </div>
+
+  <!-- Dashboard global: permanece visible arriba de las pestañas en toda la app -->
+  <div class="control-dashboard global-dashboard" id="globalDashboard"></div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="scan">Buscar artículo</button>
+    <button class="tab-btn" data-tab="control">Control</button>
+    <button class="tab-btn" data-tab="depositos">Diferencias</button>
+    <button class="tab-btn" data-tab="db">Base de datos</button>
+  </div>
+
+  <!-- SCAN PANEL -->
+  <div class="panel active" id="panel-scan">
+    <!-- El resultado/conteo queda siempre arriba de la cámara. -->
+    <div id="scanResult"></div>
+
+    <!-- Búsqueda unificada: admite pistola, código, artículo o descripción. -->
+    <div class="hardware-scan-box" id="hardwareScanBox">
+      <p class="section-title">Buscar artículo</p>
+      <div class="hardware-scan-row">
+        <input type="text" class="search-input hardware-scan-input" id="hardwareBarcodeInput"
+          placeholder="Código de barras, artículo o descripción…" autocomplete="off" autocapitalize="off"
+          spellcheck="false" inputmode="text" enterkeyhint="search">
+        <button class="btn btn-primary" id="btnHardwareScan" type="button">Buscar</button>
+      </div>
+      <div class="hardware-scan-hint">Podés escribir o pegar un código de barras, número de artículo o parte de la descripción. La pistola también funciona directamente sobre este campo.</div>
+      <div id="unifiedSearchResults"></div>
+    </div>
+
+    <div class="camera-controls" id="cameraControls">
+      <button class="btn btn-primary btn-block" id="btnEnableCamera" type="button">📷 Activar cámara</button>
+      <button class="btn btn-ghost btn-block" id="btnDisableCamera" type="button" style="display:none;">⏹ Desactivar cámara</button>
+    </div>
+
+    <div class="camera-area" id="cameraArea" style="display:none;">
+    <div class="scan-frame" id="scanFrame">
+      <video class="scan-video" id="scanVideo" playsinline muted autoplay></video>
+      <div class="scan-idle" id="scanIdle">
+        <span>📷 Presioná «Iniciar escaneo» y apuntá la cámara al código de barras UPC del producto.</span>
+        <span style="font-size:10px;opacity:0.7;">Mantené el código quieto y bien iluminado</span>
+      </div>
+      <div class="scan-corner c-tl"></div>
+      <div class="scan-corner c-tr"></div>
+      <div class="scan-corner c-bl"></div>
+      <div class="scan-corner c-br"></div>
+      <div class="scan-laser"></div>
+    </div>
+    <div class="btn-row" id="scanButtons">
+      <button class="btn btn-primary btn-block" id="btnStartScan">📷 Iniciar escaneo</button>
+      <button class="btn btn-ghost btn-block" id="btnStopScan" style="display:none;">⏹ Detener</button>
+    </div>
+    <div class="scan-status" id="scanStatus">Cámara desactivada</div>
+    <div class="scan-hint">📌 Apuntá al código UPC/EAN. Mantené el teléfono estable y con buena luz.</div>
+    <div id="camError"></div>
+    </div>
+
+  </div>
+
+  <!-- CONTROL PANEL -->
+  <div class="panel" id="panel-control">
+    <p class="section-title">Control de stock</p>
+    <div class="control-filter-grid">
+      <div>
+        <label class="hardware-label" for="controlDeposito">Depósito</label>
+        <select class="search-input" id="controlDeposito">
+          <option value="">Todos los depósitos</option>
+        </select>
+      </div>
+      <div>
+        <label class="hardware-label" for="controlLinea">Línea</label>
+        <select class="search-input" id="controlLinea">
+          <option value="">Todas las líneas</option>
+        </select>
+      </div>
+    </div>
+    <div id="controlHost"></div>
+  </div>
+
+  <!-- DIFERENCIAS PANEL -->
+  <div class="panel" id="panel-depositos">
+    <p class="section-title">Diferencias</p>
+    <div class="control-progress"><span>Productos con diferencia</span><strong id="differenceCount">0</strong></div>
+    <div id="depositosHost"></div>
+  </div>
+
+  <!-- DB PANEL -->
+  <div class="panel" id="panel-db">
+    <p class="section-title">Base de datos (Excel)</p>
+    <div class="upload-zone" id="uploadZone">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#5B6259" stroke-width="1.5"><path d="M12 3v12m0-12l-4 4m4-4l4 4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+      <div class="upload-title">Cargar planilla Excel</div>
+      <div class="upload-sub">.xlsx / .xls — tocá para elegir el archivo</div>
+    </div>
+    <input type="file" id="fileInput" accept=".xlsx,.xls">
+    <div id="dbInfo"></div>
+    <div class="btn-row">
+      <button class="btn btn-block" id="btnExport">📥 Descargar planilla actualizada</button>
+      <button class="btn btn-ghost btn-block" id="btnResetCounts">🔄 Reiniciar conteos</button>
+    </div>
+    
+    <div class="btn-row">
+      <button class="btn btn-danger btn-block" id="btnClearDb">🗑 Eliminar base de datos</button>
+    </div>
+
+    <p class="section-title" style="margin-top:28px;">Columnas del Excel</p>
+    <div class="col-map">
+      <div class="col-map-row"><span>Artículo</span><span>Número de artículo</span></div>
+      <div class="col-map-row"><span>Desc. artículo</span><span>Descripción</span></div>
+      <div class="col-map-row"><span>Línea</span><span>Línea de producto</span></div>
+      <div class="col-map-row"><span>Depósito</span><span>Ubicación</span></div>
+      <div class="col-map-row"><span>Sucursal</span><span>Sucursal</span></div>
+      <div class="col-map-row"><span>Agrupación</span><span>Agrupación</span></div>
+      <div class="col-map-row"><span>Saldo real</span><span>Stock del sistema</span></div>
+      <div class="col-map-row"><span>Código de barras</span><span>UPC / EAN</span></div>
+    </div>
+
+    <p class="section-title" style="margin-top:28px;">Acerca de esta App</p>
+    <div class="db-meta">
+      Esta app de control de stock fue realizada por el equipo de:<br><br>
+      <b>iPoint Alto Palermo (Victoria, Oscar y Martin)</b><br><br>
+      Es un producto realizado con iA, puede tener errores, consultar al equipo: santafe@ipoint.com.ar<br><br>
+      <b>Dónde corre esta app</b><br><br>
+      iPoint utiliza dos servicios principales:<br><br>
+      <b>GitHub Pages</b> — aloja y publica la aplicación web con HTTPS, permitiendo abrir iPoint desde iPhone, iPad o computadora y utilizar funciones como el escáner con cámara.<br><br>
+      <b>Supabase</b> — funciona como base de datos en la nube. Guarda el inventario, las sesiones de conteo y los conteos realizados, y permite mantener la información sincronizada entre distintos dispositivos.<br><br>
+      Además, iPoint conserva una copia local en el navegador. Si Internet se interrumpe, el conteo puede seguir guardándose localmente y se sincroniza nuevamente con Supabase cuando vuelve la conexión.
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+/* ---------- estado ---------- */
+const STORAGE_KEY = "stockdb_v1";
+const SUPABASE_URL = "https://xuhdwxmdrzcinlgxogfl.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_sNpupHr24XHsZlBGlt6HGA_rmMV1YqM";
+const sb = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY) : null;
+let DB = [];
+let barcodeIndex = new Map();
+let fileMeta = null;
+let activeSessionId = null;
+let realtimeChannel = null;
+let syncTimers = new Map();
+let codeReader = null;
+let scanning = false;
+let scanCooldown = false;
+let scanAttempts = 0;
+
+const $ = (sel, root=document) => root.querySelector(sel);
+const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+
+/* ---------- utilidades ---------- */
+function stripAccents(s){
+  return (s||"").toString().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+}
+function normHeader(h){
+  return stripAccents(h).toLowerCase().replace(/\s+/g," ").trim();
+}
+function digitsOnly(s){
+  return (s||"").toString().replace(/[^0-9]/g,"");
+}
+function codeVariants(raw){
+  const d = digitsOnly(raw);
+  const set = new Set();
+  if(d){ 
+    set.add(d);
+    // Si tiene 12 dígitos, probar con 0 adelante (UPC-A)
+    if(d.length === 12) set.add("0" + d);
+    // Si tiene 13 dígitos y empieza con 0, probar sin el 0
+    if(d.length === 13 && d.startsWith("0")) set.add(d.slice(1));
+    // Si tiene menos de 12 dígitos, probar completando con ceros a la izquierda
+    if(d.length < 12) {
+      const padded = d.padStart(12, "0");
+      set.add(padded);
+      set.add("0" + padded);
+    }
+  }
+  return Array.from(set);
+}
+function fmtDate(d){
+  return d.toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"});
+}
+function showToast(msg){
+  const t = $("#toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(()=>t.classList.remove("show"), 2200);
+}
+function saveDb(){
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({fileMeta, rows:DB}));
+  }catch(e){
+    showToast("⚠ No se pudo guardar (almacenamiento lleno). Exportá como respaldo.");
+  }
+}
+function loadDb(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return;
+    const parsed = JSON.parse(raw);
+    DB = (parsed.rows || []).map(r=>({...r, linea: r.linea || "Sin línea", sucursal: r.sucursal || "Sin sucursal", agrupacion: r.agrupacion || "Sin agrupación"}));
+    fileMeta = parsed.fileMeta || null;
+    buildIndex();
+  }catch(e){ /* ignore corrupt storage */ }
+}
+function setCloudStatus(state, text){
+  const el = $("#cloudStatus");
+  const tx = $("#cloudStatusText");
+  if(!el || !tx) return;
+  el.className = "cloud-status " + (state || "");
+  tx.textContent = text || "";
+}
+
+async function testCloudConnection(){
+  if(!sb){ setCloudStatus("error", "Supabase no disponible"); return false; }
+  try{
+    const {error} = await sb.from("sesiones_conteo").select("id").limit(1);
+    if(error) throw error;
+    setCloudStatus("ok", "☁ Sincronizado");
+    return true;
+  }catch(err){
+    console.error("Supabase:", err);
+    setCloudStatus(navigator.onLine ? "error" : "offline", navigator.onLine ? "⚠ Error de sincronización" : "⚠ Sin conexión · guardado local");
+    return false;
+  }
+}
+
+async function createCloudSession(file){
+  if(!sb) return null;
+  setCloudStatus("syncing", "⏳ Creando conteo…");
+  const sucursal = DB.find(r=>r.sucursal && r.sucursal !== "Sin sucursal")?.sucursal || "Sin sucursal";
+  const nombre = `${file.name} · ${new Date().toLocaleString("es-AR")}`;
+  const {data,error} = await sb.from("sesiones_conteo").insert({nombre, sucursal, estado:"activo"}).select("id").single();
+  if(error) throw error;
+  activeSessionId = data.id;
+  return data.id;
+}
+
+async function uploadInventoryToCloud(){
+  if(!sb || !activeSessionId || !DB.length) return;
+  setCloudStatus("syncing", `⏳ Subiendo inventario (0/${DB.length})…`);
+  const batchSize = 300;
+  const uploaded = [];
+  for(let start=0; start<DB.length; start+=batchSize){
+    const batch = DB.slice(start,start+batchSize).map((r,idx)=>({
+      sesion_id: activeSessionId,
+      articulo: r.articulo,
+      desc_articulo: r.descripcion,
+      linea: r.linea,
+      deposito: r.deposito,
+      sucursal: r.sucursal,
+      agrupacion: r.agrupacion,
+      saldo_real: Number(r.saldo)||0,
+      codigo_barras: r.codigo || "",
+      origen_indice: start + idx + 1
+    }));
+    const {data,error} = await sb.from("inventario").insert(batch).select("id,origen_indice");
+    if(error) throw error;
+    uploaded.push(...(data||[]));
+    setCloudStatus("syncing", `⏳ Subiendo inventario (${Math.min(start+batchSize,DB.length)}/${DB.length})…`);
+  }
+  const idByIndex = new Map((uploaded||[]).map(row=>[Number(row.origen_indice), row.id]));
+  DB.forEach((r,i)=>{
+    const cloudId = idByIndex.get(i+1);
+    if(cloudId != null){
+      r._id = cloudId;
+      r.cloudId = cloudId;
+    }
+  });
+  fileMeta = {...fileMeta, sessionId:activeSessionId};
+  saveDb();
+  subscribeRealtime();
+  setCloudStatus("ok", "☁ Inventario sincronizado");
+}
+
+async function startNewCloudInventory(file){
+  try{
+    const ok=await testCloudConnection();
+    if(!ok) return;
+    await createCloudSession(file);
+    await uploadInventoryToCloud();
+    showToast("☁ Inventario guardado en Supabase.");
+  }catch(err){
+    console.error("Carga Supabase:",err);
+    const detail = err?.message || err?.details || "Error desconocido";
+    setCloudStatus("error", "⚠ Guardado local · error en nube");
+    showToast("⚠ Supabase: " + detail.slice(0,180));
+  }
+}
+
+async function loadLatestCloudSession(){
+  if(!sb || !navigator.onLine) return false;
+  setCloudStatus("syncing", "⏳ Buscando conteo activo…");
+  try{
+    const {data:sessions,error:se}=await sb.from("sesiones_conteo").select("id,nombre,sucursal,created_at").eq("estado","activo").order("created_at",{ascending:false}).limit(1);
+    if(se) throw se;
+    if(!sessions || !sessions.length){ setCloudStatus("ok", "☁ Conectado · sin conteo activo"); return false; }
+    activeSessionId=sessions[0].id;
+    const {data:inventory,error:ie}=await sb.from("inventario").select("id,origen_indice,articulo,desc_articulo,linea,deposito,sucursal,agrupacion,saldo_real,codigo_barras").eq("sesion_id",activeSessionId).order("origen_indice",{ascending:true});
+    if(ie) throw ie;
+    if(!inventory || !inventory.length){ setCloudStatus("ok", "☁ Conectado · sesión vacía"); return false; }
+    const {data:counts,error:ce}=await sb.from("conteos").select("inventario_id,cantidad_contada,updated_at").eq("sesion_id",activeSessionId);
+    if(ce) throw ce;
+    const cm=new Map((counts||[]).map(c=>[String(c.inventario_id),c]));
+    DB=inventory.map((r,i)=>{
+      const c=cm.get(String(r.id));
+      return {articulo:r.articulo||"",descripcion:r.desc_articulo||"Sin descripción",linea:r.linea||"Sin línea",deposito:r.deposito||"Sin depósito",sucursal:r.sucursal||"Sin sucursal",agrupacion:r.agrupacion||"Sin agrupación",saldo:Number(r.saldo_real)||0,codigo:r.codigo_barras||"",contado:c&&c.cantidad_contada!==null?Number(c.cantidad_contada):null,contadoAt:c?.updated_at||null,_id:r.id,cloudId:r.id};
+    });
+    fileMeta={name:sessions[0].nombre||"Conteo Supabase",loadedAt:sessions[0].created_at||new Date().toISOString(),rowCount:DB.length,sessionId:activeSessionId,source:"Supabase"};
+    buildIndex(); saveDb();
+    populateControlFilters(); renderDbInfo(); renderDepositos(); renderControl(); refreshSummary();
+    subscribeRealtime();
+    setCloudStatus("ok", "☁ Sincronizado");
+    showToast("☁ Conteo recuperado desde Supabase.");
+    return true;
+  }catch(err){
+    console.error("Carga nube:",err);
+    setCloudStatus("error", "⚠ Error de sincronización · usando copia local");
+    return false;
+  }
+}
+
+async function syncRowCount(row){
+  if(!sb || !activeSessionId || !row || !row.cloudId) return;
+  if(!navigator.onLine){ setCloudStatus("offline", "⚠ Sin conexión · guardado local"); return; }
+  setCloudStatus("syncing", "⏳ Guardando…");
+  try{
+    if(row.contado===null || row.contado===undefined){
+      const {error}=await sb.from("conteos").delete().eq("sesion_id",activeSessionId).eq("inventario_id",row.cloudId);
+      if(error) throw error;
+    }else{
+      const {error}=await sb.from("conteos").upsert({sesion_id:activeSessionId,inventario_id:row.cloudId,cantidad_contada:Number(row.contado),updated_at:new Date().toISOString()},{onConflict:"sesion_id,inventario_id"});
+      if(error) throw error;
+    }
+    setCloudStatus("ok", "☁ Sincronizado");
+  }catch(err){
+    console.error("Guardar conteo nube:",err);
+    setCloudStatus("error", "⚠ Guardado local · pendiente de nube");
+  }
+}
+
+function queueRowSync(row){
+  if(!row) return;
+  const key=String(row.cloudId||row._id);
+  clearTimeout(syncTimers.get(key));
+  syncTimers.set(key,setTimeout(()=>{ syncTimers.delete(key); syncRowCount(row); },550));
+}
+
+async function syncAllCounts(){
+  if(!activeSessionId) return;
+  for(const row of DB) await syncRowCount(row);
+}
+
+function subscribeRealtime(){
+  if(!sb || !activeSessionId) return;
+  try{ if(realtimeChannel) sb.removeChannel(realtimeChannel); }catch(e){}
+  realtimeChannel=sb.channel("ipoint-conteos-"+activeSessionId)
+    .on("postgres_changes",{event:"*",schema:"public",table:"conteos",filter:`sesion_id=eq.${activeSessionId}`},payload=>{
+      const rec=payload.new && payload.new.inventario_id ? payload.new : payload.old;
+      const row=DB.find(r=>String(r.cloudId||r._id)===String(rec?.inventario_id));
+      if(!row) return;
+      if(payload.eventType==="DELETE"){ row.contado=null; row.contadoAt=null; }
+      else { row.contado=payload.new.cantidad_contada===null?null:Number(payload.new.cantidad_contada); row.contadoAt=payload.new.updated_at||new Date().toISOString(); }
+      saveDb(); refreshSummary(); renderControl(); renderDepositos();
+      setCloudStatus("ok", "☁ Sincronizado");
+    }).subscribe();
+}
+
+function buildIndex(){
+  barcodeIndex = new Map();
+  DB.forEach((row, idx)=>{
+    const variants = codeVariants(row.codigo);
+    variants.forEach(v=>{
+      if(!barcodeIndex.has(v)) barcodeIndex.set(v, []);
+      barcodeIndex.get(v).push(idx);
+    });
+  });
+}
+
+/* ---------- import excel ---------- */
+const HEADER_CANDIDATES = {
+  articulo: ["articulo","artículo"],
+  descripcion: ["desc. articulo","desc articulo","descripcion de producto","descripcion","descripción"],
+  linea: ["linea","línea"],
+  deposito: ["deposito","depósito"],
+  sucursal: ["sucursal"],
+  agrupacion: ["agrupacion","agrupación"],
+  saldo: ["saldo real"],
+  codigo: ["codigo de barras","código de barras"]
+};
+function detectColumns(headerRow){
+  const normed = headerRow.map(normHeader);
+  const map = {};
+  for(const key in HEADER_CANDIDATES){
+    let foundIdx = -1;
+    for(const cand of HEADER_CANDIDATES[key]){
+      const i = normed.findIndex(h => h === cand);
+      if(i !== -1){ foundIdx = i; break; }
+    }
+    if(foundIdx === -1){
+      for(const cand of HEADER_CANDIDATES[key]){
+        const i = normed.findIndex(h => h.includes(cand));
+        if(i !== -1){ foundIdx = i; break; }
+      }
+    }
+    map[key] = foundIdx;
+  }
+  return map;
+}
+function handleFile(file){
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    try{
+      const wb = XLSX.read(e.target.result, {type:"array"});
+      const sheetName = wb.SheetNames[0];
+      const sheet = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, {header:1, raw:true, defval:""});
+      if(!rows.length){ renderDbError("La planilla está vacía."); return; }
+      const headerRow = rows[0].map(h=>String(h));
+      const map = detectColumns(headerRow);
+      const requiredKeys = ["articulo","descripcion","linea","deposito","sucursal","agrupacion","saldo","codigo"];
+      const missing = requiredKeys.filter(k=>map[k]===-1);
+      if(missing.length){
+        renderDbError(
+          "No se encontraron estas columnas: " + missing.join(", ") + ".<br>" +
+          "Encabezados detectados: " + headerRow.filter(h=>h).join(", ") + ".<br>" +
+          "Renombrá las columnas según la lista de más abajo y volvé a cargar el archivo."
+        );
+        return;
+      }
+      const newDb = [];
+      for(let i=1;i<rows.length;i++){
+        const r = rows[i];
+        if(!r || r.every(c=>c==="" || c===undefined || c===null)) continue;
+        const articulo = String(r[map.articulo] ?? "").trim();
+        const codigo = String(r[map.codigo] ?? "").trim();
+        if(!articulo && !codigo) continue;
+        const saldoRaw = r[map.saldo];
+        const saldo = typeof saldoRaw === "number" ? saldoRaw : parseFloat(String(saldoRaw).replace(",",".")) || 0;
+        newDb.push({
+          articulo: articulo || "Artículo #" + i,
+          descripcion: String(r[map.descripcion] ?? "").trim() || "Sin descripción",
+          saldo: saldo,
+          codigo: codigo || "",
+          deposito: String(r[map.deposito] ?? "Sin depósito").trim() || "Sin depósito",
+          linea: String(r[map.linea] ?? "Sin línea").trim() || "Sin línea",
+          sucursal: String(r[map.sucursal] ?? "Sin sucursal").trim() || "Sin sucursal",
+          agrupacion: String(r[map.agrupacion] ?? "Sin agrupación").trim() || "Sin agrupación",
+          contado: null,
+          contadoAt: null,
+          _id: i
+        });
+      }
+      DB = newDb;
+      fileMeta = {name:file.name, loadedAt:new Date().toISOString(), rowCount:DB.length};
+      buildIndex();
+      saveDb();
+      renderDbInfo();
+      populateControlFilters();
+      renderDepositos();
+      renderControl();
+      refreshSummary();
+      showToast("✅ Base de datos cargada: " + DB.length + " artículos.");
+      startNewCloudInventory(file);
+    }catch(err){
+      console.error(err);
+      renderDbError("No se pudo leer el archivo. Verificá que sea un .xlsx / .xls válido.");
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function renderDbError(html){
+  $("#dbInfo").innerHTML = '<div class="error-box"><b>⚠ Error</b>'+html+'</div>';
+}
+function renderDbInfo(){
+  if(!fileMeta || !DB.length){
+    $("#dbInfo").innerHTML = '<div class="db-meta">📄 Todavía no cargaste ninguna planilla.</div>';
+    return;
+  }
+  const deps = new Set(DB.map(r=>r.deposito));
+  const contados = DB.filter(r=>r.contado!==null).length;
+  $("#dbInfo").innerHTML =
+    '<div class="db-meta">'+
+    '📁 Archivo: <b>'+fileMeta.name+'</b><br>'+
+    '📦 Artículos: <b>'+DB.length+'</b><br>'+
+    '🏢 Depósitos: <b>'+deps.size+'</b><br>'+
+    '✅ Contados: <b>'+contados+'</b><br>'+
+    '📅 Cargado: <b>'+new Date(fileMeta.loadedAt).toLocaleString("es-AR")+'</b>'+
+    '</div>';
+}
+
+/* ---------- export excel ---------- */
+function exportDb(){
+  if(!DB.length){ showToast("No hay datos para exportar."); return; }
+
+  const data = DB.map(r=>({
+    "Artículo": r.articulo,
+    "Desc. artículo": r.descripcion,
+    "Línea": r.linea,
+    "Depósito": r.deposito,
+    "Sucursal": r.sucursal,
+    "Agrupación": r.agrupacion,
+    "Saldo real": r.saldo,
+    "Código de barras": r.codigo,
+    "Unidades contadas": r.contado === null ? "" : r.contado,
+    "Diferencia": r.contado === null ? "" : (r.contado - r.saldo)
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Stock");
+  XLSX.writeFile(wb, "Stock_actualizado_" + new Date().toISOString().slice(0,10) + ".xlsx");
+}
+
+/* ---------- respaldo portable del progreso ---------- */
+function exportProgress(){
+  if(!DB.length){ showToast("No hay datos para guardar."); return; }
+  const payload = {
+    app: "iPoint Control de Inventario",
+    version: 2,
+    savedAt: new Date().toISOString(),
+    fileMeta,
+    rows: DB
+  };
+  const blob = new Blob([JSON.stringify(payload)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "iPoint_progreso_" + new Date().toISOString().slice(0,10) + ".json";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast("💾 Progreso guardado.");
+}
+
+function importProgress(file){
+  const reader = new FileReader();
+  reader.onload = e=>{
+    try{
+      const parsed = JSON.parse(e.target.result);
+      if(!Array.isArray(parsed.rows) || !parsed.rows.length) throw new Error("Sin datos");
+      DB = parsed.rows.map(r=>({...r, linea:r.linea||"Sin línea", sucursal:r.sucursal||"Sin sucursal", agrupacion:r.agrupacion||"Sin agrupación"}));
+      fileMeta = parsed.fileMeta || {name:"Progreso importado", loadedAt:new Date().toISOString(), rowCount:DB.length};
+      buildIndex();
+      saveDb();
+      populateControlFilters();
+      renderDbInfo();
+      renderDepositos();
+      renderControl();
+      refreshSummary();
+      showToast("✅ Progreso restaurado: " + DB.length + " registros.");
+    }catch(err){
+      console.error(err);
+      showToast("⚠ El archivo de progreso no es válido.");
+    }
+  };
+  reader.readAsText(file);
+}
+
+/* ---------- búsqueda ---------- */
+function findRows(raw){
+  const q = (raw || "").toString().trim();
+  if(!q) return [];
+
+  const digits = digitsOnly(q);
+  const variants = digits ? codeVariants(digits) : [];
+  const result = [];
+  const seen = new Set();
+
+  // Primero, coincidencia exacta por código de barras.
+  for(const v of variants){
+    const indexes = barcodeIndex.get(v) || [];
+    for(const idx of indexes){
+      if(!seen.has(idx)){
+        seen.add(idx);
+        result.push(DB[idx]);
+      }
+    }
+  }
+  if(result.length) return result;
+
+  // Luego búsqueda flexible por artículo, descripción o código.
+  const nq = stripAccents(q).toLowerCase();
+  for(const row of DB){
+    const hay = [
+      row.articulo, row.descripcion, row.codigo
+    ].map(x=>stripAccents(x).toLowerCase());
+
+    if(hay.some(x=>x.includes(nq))){
+      result.push(row);
+    }
+  }
+  return result;
+}
+
+function getRowsByBarcode(raw){
+  const variants = codeVariants(raw);
+  const rows = [];
+  const seen = new Set();
+  for(const v of variants){
+    const indexes = barcodeIndex.get(v) || [];
+    for(const idx of indexes){
+      if(!seen.has(idx)){
+        seen.add(idx);
+        rows.push(DB[idx]);
+      }
+    }
+  }
+  return rows;
+}
+
+function getRowByBarcode(raw){
+  return getRowsByBarcode(raw)[0] || null;
+}
+
+function articleKey(row){
+  return String(row?.articulo || row?.codigo || row?._id || '').trim().toLowerCase();
+}
+
+function groupRowsByArticle(rows){
+  const groups = new Map();
+  (rows || []).forEach(row=>{
+    const key = articleKey(row);
+    if(!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  });
+  return Array.from(groups.values());
+}
+
+// Devuelve TODAS las filas del mismo artículo, incluso si el código de barras
+// escaneado solo aparece cargado en uno de sus depósitos.
+function getAllRowsForArticle(row){
+  if(!row) return [];
+  const key = articleKey(row);
+  return DB.filter(r => articleKey(r) === key);
+}
+
+// A partir de cualquier conjunto de coincidencias, completa cada artículo
+// con todos sus depósitos y elimina duplicados.
+function expandRowsToFullArticles(rows){
+  const byArticle = new Map();
+  (rows || []).forEach(row=>{
+    const fullRows = getAllRowsForArticle(row);
+    const source = fullRows.length ? fullRows : [row];
+    const key = articleKey(row);
+    if(!byArticle.has(key)) byArticle.set(key, new Map());
+    source.forEach(r => byArticle.get(key).set(String(r._id), r));
+  });
+  return Array.from(byArticle.values()).map(m=>Array.from(m.values()));
+}
+
+function articleTotalStock(rows){
+  return (rows || []).reduce((sum,row)=>sum + (Number(row.saldo)||0), 0);
+}
+
+function articleTotalCounted(rows){
+  const countedRows = (rows || []).filter(row=>row.contado !== null && row.contado !== undefined);
+  if(!countedRows.length) return null;
+  return countedRows.reduce((sum,row)=>sum + (Number(row.contado)||0), 0);
+}
+
+function renderArticleTicket(rows, host){
+  if(!rows || !rows.length || !host) return;
+
+  const totalStock = articleTotalStock(rows);
+  const totalCounted = articleTotalCounted(rows);
+  const allCounted = rows.every(row=>row.contado !== null && row.contado !== undefined);
+  let statusClass = 'pending';
+  let statusText = 'Pendiente de conteo';
+
+  if(allCounted){
+    const diff = Number(totalCounted) - Number(totalStock);
+    if(diff === 0){ statusClass='ok'; statusText='OK · Sin diferencia'; }
+    else if(diff < 0){ statusClass='falta'; statusText='Falta ' + Math.abs(diff); }
+    else { statusClass='sobra'; statusText='Sobra ' + diff; }
+  }else if(totalCounted !== null){
+    statusText = 'Conteo parcial · ' + totalCounted + ' de ' + totalStock;
+  }
+
+  const first = rows[0];
+  const sortedRows = [...rows].sort((a,b)=>String(a.deposito).localeCompare(String(b.deposito),'es'));
+
+  host.innerHTML = `
+    <div class="article-group">
+      <div class="article-group-head">
+        <div class="article-group-title">
+          <div class="article-group-code">${escapeHtml(first.articulo)}</div>
+          <div class="article-group-desc">${escapeHtml(first.descripcion)}</div>
+        </div>
+        <div class="article-group-total">
+          <div class="label">Stock total</div>
+          <div class="value">${totalStock}</div>
+        </div>
+      </div>
+      <div class="article-summary-line"><span>${rows.length} depósito${rows.length===1?'':'s'}</span><span>Conteo total: <b id="articleCountTotal">${totalCounted === null ? '—' : totalCounted}</b></span></div>
+      ${sortedRows.map(row=>`
+        <div class="depot-count-row">
+          <div class="depot-count-name">${escapeHtml(row.deposito)}</div>
+          <div class="depot-count-stock">Sistema<br><b>${Number(row.saldo)||0}</b></div>
+          <input class="depot-count-input" type="number" min="0" step="1" inputmode="numeric"
+            value="${row.contado === null ? '' : row.contado}" data-id="${row._id}" placeholder="—" aria-label="Conteo en ${escapeHtml(row.deposito)}">
+        </div>`).join('')}
+      <div class="article-status"><div class="status-pill ${statusClass}" id="articleStatus">${statusText}</div></div>
+      <div class="article-actions">
+        <div class="btn-row">
+          <button class="btn btn-primary btn-block" id="btnSaveArticleCount">Guardar conteos</button>
+          <button class="btn btn-ghost btn-block" id="btnNextScanArticle">📷 Escanear otro</button>
+        </div>
+      </div>
+    </div>`;
+
+  const inputs = $$('.depot-count-input', host);
+  const status = $('#articleStatus', host);
+  const totalEl = $('#articleCountTotal', host);
+
+  function readValues(){
+    return inputs.map(input=>({
+      input,
+      row: DB.find(r=>String(r._id)===String(input.dataset.id)),
+      value: input.value === '' ? null : Number(input.value)
+    }));
+  }
+
+  function updateArticleStatus(){
+    const vals = readValues();
+    const valid = vals.every(x=>x.value === null || (Number.isFinite(x.value) && x.value >= 0));
+    const counted = vals.filter(x=>x.value !== null);
+    const countedTotal = counted.reduce((sum,x)=>sum + (Number(x.value)||0),0);
+    totalEl.textContent = counted.length ? countedTotal : '—';
+    if(!valid){
+      status.className='status-pill pending';
+      status.textContent='Cantidad no válida';
+      return;
+    }
+    if(counted.length === 0){
+      status.className='status-pill pending';
+      status.textContent='Pendiente de conteo';
+      return;
+    }
+    if(counted.length < vals.length){
+      status.className='status-pill pending';
+      status.textContent='Conteo parcial · ' + countedTotal + ' de ' + totalStock;
+      return;
+    }
+    const diff = countedTotal - totalStock;
+    if(diff===0){ status.className='status-pill ok'; status.textContent='OK · Sin diferencia'; }
+    else if(diff<0){ status.className='status-pill falta'; status.textContent='Falta ' + Math.abs(diff); }
+    else { status.className='status-pill sobra'; status.textContent='Sobra ' + diff; }
+  }
+
+  // Guardado automático: cada depósito se conserva inmediatamente, incluso si
+  // todavía faltan otros depósitos por contar. No se obliga a completar todo.
+  inputs.forEach(input=>input.addEventListener('input', ()=>{
+    const row = DB.find(r=>String(r._id)===String(input.dataset.id));
+    if(!row) return;
+    if(input.value === ''){
+      row.contado = null;
+      row.contadoAt = null;
+    }else{
+      const n = Number(input.value);
+      if(!Number.isFinite(n) || n < 0){
+        updateArticleStatus();
+        return;
+      }
+      row.contado = n;
+      row.contadoAt = new Date().toISOString();
+    }
+    saveDb();
+    queueRowSync(row);
+    refreshSummary();
+    populateControlFilters();
+    renderControl();
+    renderDepositos();
+    updateArticleStatus();
+  }));
+
+  $('#btnSaveArticleCount', host).addEventListener('click', ()=>{
+    const vals = readValues();
+    if(vals.some(x=>x.value !== null && (!Number.isFinite(x.value) || x.value < 0))){
+      showToast('Hay una cantidad no válida.');
+      return;
+    }
+    // También permite guardar conteos parciales.
+    vals.forEach(x=>{
+      if(x.row){
+        x.row.contado = x.value;
+        x.row.contadoAt = x.value === null ? null : new Date().toISOString();
+      }
+    });
+    saveDb();
+    refreshSummary();
+    populateControlFilters();
+    renderControl();
+    renderDepositos();
+    updateArticleStatus();
+    syncAllCounts();
+    showToast('✅ Conteo guardado automáticamente.');
+  });
+
+  $('#btnNextScanArticle', host).addEventListener('click', ()=>{
+    host.innerHTML='';
+    startScanner();
+  });
+}
+
+function renderTicket(row, host){
+  if(!row || !host) return;
+
+  const counted = row.contado === null ? "" : row.contado;
+  let statusClass = "pending";
+  let statusText = "Pendiente";
+
+  if(row.contado !== null){
+    const diff = Number(row.contado) - Number(row.saldo);
+    if(diff === 0){
+      statusClass = "ok";
+      statusText = "OK · Sin diferencia";
+    }else if(diff < 0){
+      statusClass = "falta";
+      statusText = "Falta " + Math.abs(diff);
+    }else{
+      statusClass = "sobra";
+      statusText = "Sobra " + diff;
+    }
+  }
+
+  host.innerHTML = `
+    <div class="ticket">
+      <div class="ticket-head">
+        <div>
+          <div class="ticket-articulo">${escapeHtml(row.articulo)}</div>
+          <div class="ticket-desc">${escapeHtml(row.descripcion)}</div>
+        </div>
+        <div class="deposito-badge">${escapeHtml(row.deposito)}</div>
+      </div>
+      <div class="ticket-body">
+        <div class="field-grid">
+          <div class="field">
+            <div class="field-label">Stock sistema</div>
+            <div class="field-value">${Number(row.saldo) || 0}</div>
+          </div>
+          <div class="field">
+            <div class="field-label">Contado</div>
+            <input class="count-input" id="countInput" type="number" inputmode="numeric"
+              min="0" step="1" value="${counted}" placeholder="0" aria-label="Unidades contadas">
+          </div>
+        </div>
+        <div class="status-pill ${statusClass}" id="ticketStatus">${statusText}</div>
+        <div class="btn-row">
+          <button class="btn btn-primary btn-block" id="btnSaveCount">Guardar conteo</button>
+          <button class="btn btn-ghost btn-block" id="btnNextScan">📷 Escanear otro</button>
+        </div>
+      </div>
+    </div>`;
+
+  const input = $("#countInput", host);
+  const status = $("#ticketStatus", host);
+  const saveBtn = $("#btnSaveCount", host);
+  const nextBtn = $("#btnNextScan", host);
+
+  function updateStatus(){
+    const value = input.value === "" ? null : Number(input.value);
+    if(value === null || !Number.isFinite(value)){
+      status.className = "status-pill pending";
+      status.textContent = "Pendiente";
+      return;
+    }
+    const diff = value - Number(row.saldo);
+    if(diff === 0){
+      status.className = "status-pill ok";
+      status.textContent = "OK · Sin diferencia";
+    }else if(diff < 0){
+      status.className = "status-pill falta";
+      status.textContent = "Falta " + Math.abs(diff);
+    }else{
+      status.className = "status-pill sobra";
+      status.textContent = "Sobra " + diff;
+    }
+  }
+
+  input.addEventListener("input", updateStatus);
+
+  saveBtn.addEventListener("click", ()=>{
+    if(input.value === ""){
+      showToast("Ingresá la cantidad contada.");
+      input.focus();
+      return;
+    }
+    const value = Number(input.value);
+    if(!Number.isFinite(value) || value < 0){
+      showToast("La cantidad no es válida.");
+      input.focus();
+      return;
+    }
+
+    row.contado = value;
+    row.contadoAt = new Date().toISOString();
+    saveDb();
+    refreshSummary();
+    renderDepositos();
+    updateStatus();
+    showToast("✅ Conteo guardado.");
+  });
+
+  nextBtn.addEventListener("click", ()=>{
+    host.innerHTML = "";
+    startScanner();
+  });
+}
+
+function showScanResult(raw){
+  const rawText = (raw || "").toString().trim();
+  const code = digitsOnly(rawText);
+  const rows = code ? getRowsByBarcode(code) : findRows(rawText);
+
+  $("#scanResult").innerHTML = "";
+  if(rows.length){
+    stopScanner();
+    $("#scanStatus").textContent = "Búsqueda: " + (rawText || code);
+    // El código puede estar cargado en un solo depósito, pero el artículo
+    // puede existir en varios. Al escanear, mostramos TODOS sus depósitos.
+    const groups = expandRowsToFullArticles(rows);
+    if(groups.length === 1){
+      renderArticleTicket(groups[0], $("#scanResult"));
+    }else{
+      renderSearchResults(rows, $("#scanResult"));
+    }
+    return;
+  }
+
+  // Si el código existe pero no coincide por formato, mostramos la búsqueda.
+  const matches = findRows(code);
+  if(matches.length){
+    stopScanner();
+    $("#scanStatus").textContent = "Búsqueda: " + (rawText || code);
+    renderSearchResults(matches, $("#scanResult"));
+    return;
+  }
+
+  stopScanner();
+  $("#scanStatus").textContent = "Búsqueda: " + (rawText || code);
+  $("#scanResult").innerHTML = `
+    <div class="not-found">
+      <b>No encontrado</b>
+      ${escapeHtml(rawText)}<br><br>
+      No encontramos coincidencias en la base de datos cargada.
+      <div class="btn-row">
+        <button class="btn btn-ghost btn-block" id="btnRetryScan">📷 Volver a escanear</button>
+      </div>
+    </div>`;
+
+  $("#btnRetryScan").addEventListener("click", ()=>{
+    $("#scanResult").innerHTML = "";
+    startScanner();
+  });
+}
+
+function renderSearchResults(rows, host){
+  if(!rows.length){
+    host.innerHTML = `<div class="not-found"><b>No encontrado</b>No hay coincidencias.</div>`;
+    return;
+  }
+
+  // Si la búsqueda encuentra una fila de un artículo, expandimos el
+  // resultado a todas las filas de ese artículo para incluir cada depósito.
+  const groups = expandRowsToFullArticles(rows);
+  host.innerHTML = `<div class="match-list">${
+    groups.map((group,i)=>{
+      const row=group[0];
+      const total=articleTotalStock(group);
+      return `<div class="match-row" data-index="${i}">
+        <span><b>${escapeHtml(row.descripcion)}</b><br><small>${escapeHtml(row.articulo)} · ${group.length} depósito${group.length===1?'':'s'}</small></span>
+        <span>Stock ${total}</span>
+      </div>`;
+    }).join("")
+  }</div>`;
+
+  $$(".match-row", host).forEach((el,i)=>{
+    el.addEventListener("click", ()=>{
+      renderArticleTicket(groups[i], host);
+    });
+  });
+}
+
+function renderUnifiedSearch(){
+  const input = $("#hardwareBarcodeInput");
+  const host = $("#unifiedSearchResults");
+  if(!input || !host) return;
+  const q = input.value.trim();
+  if(!q){ host.innerHTML = ""; return; }
+  renderSearchResults(findRows(q), host);
+}
+
+function executeUnifiedSearch(){
+  const input = $("#hardwareBarcodeInput");
+  if(!input) return;
+  const q = input.value.trim();
+  if(!q){ input.focus(); return; }
+  showScanResult(q);
+}
+
+/* ---------- control por depósito y línea ---------- */
+function controlDepositInfo(raw){
+  const original=String(raw||"Sin depósito").trim();
+  const key=stripAccents(original).toUpperCase().replace(/\s+/g," ").trim();
+
+  if(key.includes("COMERCIAL")) return {label:"COMERCIAL", order:1, group:"commercial"};
+  if(key.includes("OUTLET")) return {label:"OUTLET", order:2, group:"outlet"};
+  if(key === "PV-APA - RMA" || key.includes("RMA")) return {label:"RMA", order:3, group:"regular"};
+  if(key === "PV - APA - SCRAP" || key.includes("SCRAP")) return {label:"SCRAP", order:4, group:"regular"};
+  if(key === "BU-ATP-BA") return {label:"BIEN DE USO", order:5, group:"regular"};
+  if(key === "PV-APA - EXHIBICION" || key.includes("EXHIBICION")) return {label:"EXHIBICIÓN", order:6, group:"regular"};
+
+  return {label:original, order:100, group:"regular"};
+}
+
+function populateControlFilters(){
+  const depSel = $("#controlDeposito"), lineSel = $("#controlLinea");
+  if(!depSel || !lineSel) return;
+  const depValue=depSel.value, lineValue=lineSel.value;
+  const deps=[...new Set(DB.map(r=>r.deposito||"Sin depósito"))].sort((a,b)=>{
+    const ia=controlDepositInfo(a), ib=controlDepositInfo(b);
+    return ia.order-ib.order || String(a).localeCompare(String(b),'es',{numeric:true,sensitivity:'base'});
+  });
+  const lines=[...new Set(DB.map(r=>r.linea||"Sin línea"))].sort((a,b)=>String(a).localeCompare(String(b),'es'));
+
+  // En el selector mostramos cada depósito OUTLET real por separado (A/B/C, etc.).
+  // En las tarjetas inferiores se conserva la agrupación visual única "OUTLET".
+  const filterDepositLabel=v=>{
+    const info=controlDepositInfo(v);
+    if(info.group==="outlet"){
+      const original=String(v||"").trim();
+      const key=stripAccents(original).toUpperCase().replace(/\s+/g," ").trim();
+      // Si el nombre trae una variante A/B/C, mostramos el nombre real del Excel.
+      if(key !== "OUTLET") return original;
+    }
+    return info.label;
+  };
+
+  depSel.innerHTML='<option value="">Todos los depósitos</option>'+deps.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(filterDepositLabel(v))}</option>`).join('');
+  lineSel.innerHTML='<option value="">Todas las líneas</option>'+lines.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+  depSel.value=deps.includes(depValue)?depValue:"";
+  lineSel.value=lines.includes(lineValue)?lineValue:"";
+}
+function renderControlDashboard(filtered){
+  const dash = $("#controlDashboard");
+  if(!dash) return;
+  if(!filtered || !filtered.length){
+    dash.innerHTML = '<div class="control-dashboard-empty">Sin datos para mostrar.</div>';
+    return;
+  }
+  const total = filtered.length;
+  const counted = filtered.filter(r=>r.contado!==null && r.contado!==undefined).length;
+  const pending = total - counted;
+  const ok = filtered.filter(r=>r.contado!==null && r.contado!==undefined && Number(r.contado)===Number(r.saldo)).length;
+  const diff = counted - ok;
+  const pct = Math.round(counted / total * 100);
+  dash.innerHTML = `
+    <div class="dashboard-shell">
+      <div class="dashboard-top">
+        <div>
+          <div class="dashboard-kicker">Avance del inventario</div>
+          <div class="dashboard-primary">${counted}<small>de ${total} contados</small></div>
+        </div>
+        <div class="dashboard-percent">${pct}%</div>
+      </div>
+      <div class="dashboard-progress"><span style="width:${pct}%"></span></div>
+      <div class="dashboard-stats">
+        <div class="dashboard-stat"><strong>${total}</strong><span>Total</span></div>
+        <div class="dashboard-stat"><strong>${pending}</strong><span>Pendientes</span></div>
+        <div class="dashboard-stat ok"><strong>${ok}</strong><span>OK</span></div>
+        <div class="dashboard-stat diff"><strong>${diff}</strong><span>Diferencias</span></div>
+      </div>
+    </div>`;
+}
+
+function renderControl(){
+  const host = $("#controlHost");
+  if(!host) return;
+  if(!DB.length){
+    host.innerHTML='<div class="empty-state">Cargá una planilla Excel para ver el control.</div>';
+
+    return;
+  }
+
+  // Los filtros siguen disponibles, pero el orden visual responde al recorrido físico:
+  // COMERCIAL → Mac, iPad, iPhone, Watch, Accesorios, AirPods, TV & Home, Consumible → SKU A-Z.
+  // Resto de depósitos → SKU A-Z sin desglose de línea.
+  // Todos los depósitos cuyo nombre contiene OUTLET se agrupan visualmente en OUTLET.
+  const depFilter = $("#controlDeposito").value;
+  const lineFilter = $("#controlLinea").value;
+  const filtered = DB.filter(r =>
+    (!depFilter || (r.deposito||"Sin depósito")===depFilter) &&
+    (!lineFilter || (r.linea||"Sin línea")===lineFilter)
+  );
+
+  const totalCounted = filtered.filter(r=>r.contado!==null && r.contado!==undefined).length;
+  const progress = filtered.length ? Math.round(totalCounted/filtered.length*100) : 0;
+  
+
+  if(!filtered.length){
+    host.innerHTML='<div class="empty-state">No hay artículos para los filtros seleccionados.</div>';
+    return;
+  }
+
+  const skuSort=(a,b)=>String(a.articulo||"").localeCompare(String(b.articulo||""),'es',{numeric:true,sensitivity:'base'});
+  const isCommercial=d=>controlDepositInfo(d).group==="commercial";
+  const isOutlet=d=>controlDepositInfo(d).group==="outlet";
+  // Orden operativo de las líneas dentro de COMERCIAL.
+  const linePriority=["Mac","iPad","iPhone","Watch","Accesorios","AirPods","TV & Home","Consumible"];
+  const norm=v=>stripAccents(String(v||"")).trim().toLowerCase().replace(/\s+/g," ");
+
+  // Normaliza variantes habituales del Excel sin modificar el dato original.
+  const canonicalLine=v=>{
+    const key=norm(v);
+    if(key==="mac") return "Mac";
+    if(key==="ipad") return "iPad";
+    if(key==="iphone") return "iPhone";
+    if(key==="watch") return "Watch";
+    if(key==="accesorios" || key==="accesorio") return "Accesorios";
+    if(key==="airpods" || key==="air pods") return "AirPods";
+    if(key==="tv & home" || key==="tv&home" || key==="tv and home" || key==="tv home") return "TV & Home";
+    if(key==="consumible" || key==="consumibles") return "Consumible";
+    return String(v||"Sin línea");
+  };
+
+  function itemHtml(r, showDeposit=false){
+    const saldo=Number(r.saldo)||0;
+    const counted=r.contado!==null&&r.contado!==undefined;
+    const contado=counted ? Number(r.contado)||0 : null;
+    let status='Pendiente', cls='pending';
+    if(counted){
+      const diff=contado-saldo;
+      if(diff===0){status='OK';cls='ok';}
+      else if(diff<0){status='Falta '+Math.abs(diff);cls='falta';}
+      else {status='Sobra '+diff;cls='sobra';}
+    }
+    const depMeta=showDeposit ? ` · ${escapeHtml(r.deposito||'Sin depósito')}` : '';
+    return `<div class="control-item control-item-ordered">
+      <div class="control-item-desc">
+        <div class="control-item-title">${escapeHtml(r.articulo)}</div>
+        <div class="control-item-meta">${escapeHtml(r.descripcion||'Sin descripción')}${depMeta}</div>
+      </div>
+      <div class="control-stock"><small>Sistema</small><b>${saldo}</b></div>
+      <div class="control-count ${cls}"><small>${counted?'Contado':'Estado'}</small><b>${counted?contado:status}</b>${counted?`<em>${status}</em>`:''}</div>
+    </div>`;
+  }
+
+  function sectionProgress(rows){
+    const c=rows.filter(r=>r.contado!==null&&r.contado!==undefined).length;
+    return `${c}/${rows.length}`;
+  }
+
+  const commercial=filtered.filter(r=>isCommercial(r.deposito));
+  const outlet=filtered.filter(r=>isOutlet(r.deposito));
+  const regular=filtered.filter(r=>!isCommercial(r.deposito)&&!isOutlet(r.deposito));
+  let html='';
+
+  if(commercial.length){
+    const lines=new Map();
+    commercial.forEach(r=>{
+      const l=canonicalLine(r.linea);
+      if(!lines.has(l)) lines.set(l,[]);
+      lines.get(l).push(r);
+    });
+    const extra=[...lines.keys()].filter(l=>!linePriority.includes(l)).sort((a,b)=>a.localeCompare(b,'es'));
+    const orderedLines=[...linePriority,...extra].filter(l=>lines.has(l));
+    html += `<details class="control-group control-major" open>
+      <summary><span>COMERCIAL</span><span>${sectionProgress(commercial)}</span></summary>
+      <div class="control-major-body">
+      ${orderedLines.map(l=>{
+        const rows=lines.get(l).slice().sort(skuSort);
+        return `<details class="control-line control-priority-line">
+          <summary><span>${escapeHtml(l)}</span><span>${sectionProgress(rows)}</span></summary>
+          ${rows.map(r=>itemHtml(r)).join('')}
+        </details>`;
+      }).join('')}
+      </div>
+    </details>`;
+  }
+
+  // OUTLET va inmediatamente después de COMERCIAL.
+  if(outlet.length){
+    outlet.sort((a,b)=>skuSort(a,b) || String(a.deposito||'').localeCompare(String(b.deposito||''),'es'));
+    html += `<details class="control-group control-major">
+      <summary><span>OUTLET</span><span>${sectionProgress(outlet)}</span></summary>
+      <div class="control-major-body">${outlet.map(r=>itemHtml(r,true)).join('')}</div>
+    </details>`;
+  }
+
+  // Resto: RMA → Scrap → Bien de Uso → Exhibición.
+  // Los depósitos no contemplados se conservan al final para no ocultar información.
+  const depMap=new Map();
+  regular.forEach(r=>{
+    const d=r.deposito||"Sin depósito";
+    if(!depMap.has(d)) depMap.set(d,[]);
+    depMap.get(d).push(r);
+  });
+  [...depMap.entries()].sort((a,b)=>{
+    const ia=controlDepositInfo(a[0]), ib=controlDepositInfo(b[0]);
+    return ia.order-ib.order || ia.label.localeCompare(ib.label,'es');
+  }).forEach(([d,rows])=>{
+    rows.sort(skuSort);
+    const info=controlDepositInfo(d);
+    html += `<details class="control-group control-major">
+      <summary><span>${escapeHtml(info.label)}</span><span>${sectionProgress(rows)}</span></summary>
+      <div class="control-major-body">${rows.map(r=>itemHtml(r)).join('')}</div>
+    </details>`;
+  });
+
+  host.innerHTML=html;
+}
+/* ---------- depósitos ---------- */
+function renderDepositos(){
+  const host = $("#depositosHost");
+  if(!host) return;
+
+  if(!DB.length){
+    host.innerHTML = '<div class="empty-state">Cargá una planilla Excel para ver las diferencias.</div>';
+    $("#differenceCount").textContent='0';
+    return;
+  }
+
+  // Solo aparecen filas que YA fueron contadas y cuyo conteo difiere del stock.
+  // Un conteo vacío nunca se considera diferencia.
+  const differences = DB.filter(r=>
+    r.contado!==null && r.contado!==undefined && Number(r.contado)!==Number(r.saldo)
+  );
+  $("#differenceCount").textContent = differences.length;
+
+  if(!differences.length){
+    host.innerHTML = `<div class="empty-state"><strong>Sin diferencias.</strong><br>Los artículos sin conteo o con conteo correcto no aparecen aquí.</div>`;
+    return;
+  }
+
+  // DIFERENCIAS: DEPÓSITO → LÍNEA → ARTÍCULO. Todo minimizado inicialmente.
+  const deps = new Map();
+  differences.forEach(r=>{
+    const d=r.deposito||'Sin depósito';
+    const l=r.linea||'Sin línea';
+    if(!deps.has(d)) deps.set(d,new Map());
+    if(!deps.get(d).has(l)) deps.get(d).set(l,[]);
+    deps.get(d).get(l).push(r);
+  });
+
+  host.innerHTML=[...deps.entries()].sort((a,b)=>String(a[0]).localeCompare(String(b[0]),'es')).map(([d,lines])=>{
+    const depItems=[...lines.values()].flat();
+    return `<details class="control-group">
+      <summary><span>DEPÓSITO · ${escapeHtml(d)}</span><span>${depItems.length} diferencia${depItems.length===1?'':'s'}</span></summary>
+      ${[...lines.entries()].sort((a,b)=>String(a[0]).localeCompare(String(b[0]),'es')).map(([l,items])=>`
+        <details class="control-line">
+          <summary><span>LÍNEA · ${escapeHtml(l)}</span><span>${items.length}</span></summary>
+          ${items.map(r=>{
+            const saldo=Number(r.saldo)||0;
+            const contado=Number(r.contado)||0;
+            const diff=contado-saldo;
+            const diffText=diff<0 ? 'Falta '+Math.abs(diff) : 'Sobra '+diff;
+            return `<div class="control-item">
+              <div class="control-item-desc">
+                <div class="control-item-title">${escapeHtml(r.articulo)}</div>
+                <div class="control-item-meta">${escapeHtml(r.descripcion||'Sin descripción')} · ${escapeHtml(r.codigo||'Sin código')}</div>
+              </div>
+              <div class="control-stock">${saldo}<br><small style="font-size:9px;opacity:.65;">Sistema</small></div>
+              <div class="control-count ${diff<0?'falta':'sobra'}">${contado}<br><small style="font-size:9px;">${escapeHtml(diffText)}</small></div>
+            </div>`;
+          }).join('')}
+        </details>`).join('')}
+    </details>`;
+  }).join('');
+}
+/* ---------- lector externo (pistola Bluetooth/USB) ---------- */
+let hardwareBuffer = "";
+let hardwareLastKeyAt = 0;
+let hardwareTimer = null;
+
+function focusHardwareScanner(){
+  const input = $("#hardwareBarcodeInput");
+  if(input){
+    input.focus({preventScroll:true});
+    input.select();
+  }
+}
+
+function processHardwareBarcode(raw){
+  const text = (raw || "").toString().trim();
+  if(!text) return;
+  $("#hardwareScanBox").classList.add("active");
+  $("#hardwareBarcodeInput").value = text;
+  showScanResult(text);
+  setTimeout(focusHardwareScanner, 30);
+}
+
+function handleHardwareKey(event){
+  const target = event.target;
+  if(target && (target.id === "depositoSearch" || target.id === "hardwareBarcodeInput" || target.classList.contains("depot-count-input"))){
+    return;
+  }
+
+  if(event.key === "Enter"){
+    if(hardwareBuffer.length){
+      event.preventDefault();
+      const code = hardwareBuffer;
+      hardwareBuffer = "";
+      clearTimeout(hardwareTimer);
+      processHardwareBarcode(code);
+    }
+    return;
+  }
+
+  if(!/^[0-9]$/.test(event.key)) return;
+
+  const now = performance.now();
+  if(now - hardwareLastKeyAt > 120) hardwareBuffer = "";
+  hardwareLastKeyAt = now;
+  hardwareBuffer += event.key;
+  clearTimeout(hardwareTimer);
+  hardwareTimer = setTimeout(()=>{
+    if(hardwareBuffer.length >= 8){
+      const code = hardwareBuffer;
+      hardwareBuffer = "";
+      processHardwareBarcode(code);
+    }else{
+      hardwareBuffer = "";
+    }
+  }, 180);
+}
+
+function handleHardwareInputFallback(event){
+  const input = event.target;
+  const raw = (input.value || "").trim();
+  if(raw.length < 8 || /[^0-9]/.test(raw)) return;
+
+  clearTimeout(hardwareTimer);
+  hardwareTimer = setTimeout(()=>{
+    if(input.value.trim() === raw){
+      processHardwareBarcode(raw);
+    }
+  }, 220);
+}
+
+function initHardwareScanner(){
+  const input = $("#hardwareBarcodeInput");
+  const button = $("#btnHardwareScan");
+  if(!input || !button) return;
+
+  button.addEventListener("click", ()=>{
+    executeUnifiedSearch();
+  });
+
+  input.addEventListener("keydown", event=>{
+    if(event.key === "Enter"){
+      event.preventDefault();
+      executeUnifiedSearch();
+    }
+  });
+  input.addEventListener("input", handleHardwareInputFallback);
+
+  document.addEventListener("keydown", handleHardwareKey, true);
+  setTimeout(focusHardwareScanner, 100);
+}
+
+/* ---------- resumen ---------- */
+function refreshSummary(){
+  const dash = $("#globalDashboard");
+  const groups = groupRowsByArticle(DB);
+  const total = groups.length;
+  const counted = groups.filter(rows=>rows.every(r=>r.contado!==null && r.contado!==undefined)).length;
+  const pending = total - counted;
+  const ok = groups.filter(rows=>rows.every(r=>r.contado!==null && r.contado!==undefined) && articleTotalCounted(rows) === articleTotalStock(rows)).length;
+  const diff = groups.filter(rows=>rows.every(r=>r.contado!==null && r.contado!==undefined) && articleTotalCounted(rows) !== articleTotalStock(rows)).length;
+  const pct = total ? Math.round(counted / total * 100) : 0;
+
+  if(dash){
+    dash.innerHTML = `
+      <div class="dashboard-shell">
+        <div class="dashboard-top">
+          <div>
+            <div class="dashboard-kicker">Avance del inventario</div>
+            <div class="dashboard-primary">${counted}<small>de ${total} contados</small></div>
+          </div>
+          <div class="dashboard-percent">${pct}%</div>
+        </div>
+        <div class="dashboard-progress"><span style="width:${pct}%"></span></div>
+        <div class="dashboard-stats">
+          <div class="dashboard-stat"><strong>${total}</strong><span>Total</span></div>
+          <div class="dashboard-stat"><strong>${pending}</strong><span>Pendientes</span></div>
+          <div class="dashboard-stat ok"><strong>${ok}</strong><span>OK</span></div>
+          <div class="dashboard-stat diff"><strong>${diff}</strong><span>Diferencias</span></div>
+        </div>
+      </div>`;
+  }
+  renderDbInfo();
+}
+
+/* ---------- escáner ---------- */
+/*
+ * Se usa ZXing con la cámara trasera. La clave para iPhone/Safari es:
+ * - HTTPS (excepto localhost)
+ * - <video playsinline muted autoplay>
+ * - facingMode: environment
+ * - solicitar permisos mediante getUserMedia
+ * - detener las pistas al salir del escáner
+ *
+ * El escaneo se inicia automáticamente al cargar la aplicación. Si Safari
+ * exige interacción del usuario, el botón "Iniciar escaneo" queda disponible.
+ */
+async function startScanner(){
+  if(scanning) return;
+
+  if(!window.isSecureContext && location.hostname !== "localhost" && location.hostname !== "127.0.0.1"){
+    showCameraError("Safari necesita HTTPS para acceder a la cámara. Abrí esta app desde una dirección que empiece por https://.");
+    $("#scanStatus").textContent = "Cámara bloqueada por falta de HTTPS.";
+    return;
+  }
+
+  if(!window.ZXing || !window.ZXing.BrowserMultiFormatReader){
+    showCameraError("No se pudo cargar el motor de lectura de códigos. Verificá la conexión a Internet y recargá la página.");
+    return;
+  }
+
+  const video = $("#scanVideo");
+  const frame = $("#scanFrame");
+
+  try{
+    scanning = true;
+    scanAttempts = 0;
+    $("#camError").innerHTML = "";
+    $("#scanIdle").style.display = "none";
+    frame.classList.add("active");
+    $("#btnStartScan").style.display = "none";
+    $("#btnStopScan").style.display = "block";
+    $("#btnEnableCamera").style.display = "none";
+    $("#btnDisableCamera").style.display = "block";
+    $("#scanStatus").textContent = "Activando cámara…";
+
+    // Crear un lector nuevo evita estados internos de ZXing después de detener/reiniciar.
+    codeReader = new ZXing.BrowserMultiFormatReader();
+
+    const constraints = {
+      audio: false,
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1920, min: 640 },
+        height: { ideal: 1080, min: 480 }
+      }
+    };
+
+    await codeReader.decodeFromConstraints(
+      constraints,
+      video,
+      (result, error)=>{
+        if(!scanning || scanCooldown) return;
+
+        if(result){
+          const text = result.getText ? result.getText() : String(result.text || result);
+          const code = digitsOnly(text);
+
+          // UPC/EAN debe ser numérico; ignoramos lecturas claramente inválidas.
+          if(code.length < 8) return;
+
+          scanCooldown = true;
+          if(navigator.vibrate) navigator.vibrate(70);
+          showScanResult(code);
+
+          setTimeout(()=>{ scanCooldown = false; }, 900);
+          return;
+        }
+
+        // NotFoundException es normal mientras ZXing busca un código.
+        if(error && !(error instanceof ZXing.NotFoundException)){
+          console.debug("ZXing:", error);
+        }
+
+        scanAttempts++;
+        if(scanAttempts === 1){
+          $("#scanStatus").textContent = "Buscando código… apuntá al código de barras.";
+        }
+      }
+    );
+
+    // Safari puede tardar un instante en iniciar el stream.
+    try{
+      await video.play();
+    }catch(e){ /* autoplay/playsinline ya debería permitirlo */ }
+
+    $("#scanStatus").textContent = "Cámara activa · apuntá al código de barras";
+  }catch(err){
+    console.error("Error de cámara:", err);
+    scanning = false;
+    codeReader = null;
+    frame.classList.remove("active");
+    $("#scanIdle").style.display = "flex";
+    $("#btnStartScan").style.display = "block";
+    $("#btnStopScan").style.display = "none";
+    $("#btnEnableCamera").style.display = "block";
+    $("#btnDisableCamera").style.display = "none";
+
+    let msg = "No se pudo iniciar la cámara.";
+    if(err && (err.name === "NotAllowedError" || err.name === "PermissionDeniedError")){
+      msg = "Safari bloqueó el permiso de cámara. Permití la cámara para este sitio en Ajustes/Configuración de Safari y volvé a intentar.";
+    }else if(err && err.name === "NotFoundError"){
+      msg = "No se encontró una cámara disponible en este dispositivo.";
+    }else if(err && err.name === "NotReadableError"){
+      msg = "La cámara está siendo usada por otra aplicación o el navegador no puede acceder a ella.";
+    }
+
+    showCameraError(msg);
+    $("#scanStatus").textContent = "No se pudo activar la cámara.";
+  }
+}
+
+function stopScanner(){
+  scanning = false;
+  scanCooldown = false;
+
+  try{
+    if(codeReader && typeof codeReader.reset === "function"){
+      codeReader.reset();
+    }
+  }catch(e){
+    console.debug("ZXing reset:", e);
+  }
+
+  const video = $("#scanVideo");
+  if(video && video.srcObject){
+    video.srcObject.getTracks().forEach(track=>track.stop());
+    video.srcObject = null;
+  }
+
+  codeReader = null;
+  $("#scanFrame").classList.remove("active");
+  $("#scanIdle").style.display = "flex";
+  $("#btnStartScan").style.display = "block";
+  $("#btnStopScan").style.display = "none";
+  $("#btnEnableCamera").style.display = "block";
+  $("#btnDisableCamera").style.display = "none";
+  $("#cameraArea").style.display = "none";
+  $("#scanStatus").textContent = "Cámara desactivada";
+}
+
+function showCameraError(message){
+  $("#camError").innerHTML = `<div class="cam-error"><b>⚠ Cámara</b><br>${escapeHtml(message)}</div>`;
+}
+
+function escapeHtml(value){
+  return String(value ?? "").replace(/[&<>"']/g, ch=>({
+    "&":"&amp;",
+    "<":"&lt;",
+    ">":"&gt;",
+    '"':"&quot;",
+    "'":"&#039;"
+  }[ch]));
+}
+
+/* ---------- navegación ---------- */
+function switchTab(name){
+  $$(".tab-btn").forEach(btn=>{
+    btn.classList.toggle("active", btn.dataset.tab === name);
+  });
+  $$(".panel").forEach(panel=>{
+    panel.classList.toggle("active", panel.id === "panel-" + name);
+  });
+
+  if(name !== "scan"){
+    stopScanner();
+  }
+}
+
+/* ---------- eventos ---------- */
+function init(){
+  $("#todayDate").textContent = fmtDate(new Date());
+
+  // Aviso visible cuando no estamos en un contexto seguro.
+  const secure = window.isSecureContext ||
+    location.hostname === "localhost" ||
+    location.hostname === "127.0.0.1";
+  $("#httpsWarning").style.display = secure ? "none" : "block";
+
+  $$(".tab-btn").forEach(btn=>{
+    btn.addEventListener("click", ()=>switchTab(btn.dataset.tab));
+  });
+
+  $("#btnEnableCamera").addEventListener("click", ()=>{
+    $("#cameraArea").style.display = "block";
+    startScanner();
+  });
+  $("#btnDisableCamera").addEventListener("click", stopScanner);
+  $("#btnStartScan").addEventListener("click", startScanner);
+  $("#btnStopScan").addEventListener("click", stopScanner);
+  initHardwareScanner();
+
+  $("#hardwareBarcodeInput").addEventListener("input", renderUnifiedSearch);
+  $("#controlDeposito").addEventListener("change", renderControl);
+  $("#controlLinea").addEventListener("change", renderControl);
+
+  $("#uploadZone").addEventListener("click", ()=>$("#fileInput").click());
+  $("#fileInput").addEventListener("change", e=>{
+    const file = e.target.files && e.target.files[0];
+    if(file) handleFile(file);
+    e.target.value = "";
+  });
+
+  if($("#btnSaveProgress")) $("#btnSaveProgress").addEventListener("click", exportProgress);
+  if($("#btnLoadProgress") && $("#progressFileInput")) $("#btnLoadProgress").addEventListener("click", ()=>$("#progressFileInput").click());
+
+  $("#btnExport").addEventListener("click", exportDb);
+
+  $("#btnResetCounts").addEventListener("click", async ()=>{
+    if(!DB.length) return;
+    if(!confirm("¿Reiniciar todos los conteos? Esto también eliminará los conteos guardados en la nube para esta sesión.")) return;
+
+    DB.forEach(r=>{ r.contado=null; r.contadoAt=null; });
+    saveDb();
+    refreshSummary();
+    renderDepositos();
+    populateControlFilters();
+    renderControl();
+
+    if(sb && activeSessionId){
+      setCloudStatus("syncing","⏳ Reiniciando nube…");
+      try{
+        const {error}=await sb.from("conteos").delete().eq("sesion_id",activeSessionId);
+        if(error) throw error;
+        setCloudStatus("ok","☁ Sincronizado");
+        showToast("✅ Conteos reiniciados localmente y en la nube.");
+      }catch(err){
+        console.error("Reiniciar conteos nube:",err);
+        setCloudStatus("error","⚠ Conteos locales reiniciados · error en nube");
+        showToast("⚠ Se reinició localmente, pero Supabase no pudo borrar los conteos.");
+      }
+    }else{
+      showToast("Conteos reiniciados localmente.");
+    }
+  });
+
+  $("#btnClearDb").addEventListener("click", async ()=>{
+    if(!confirm("¿Eliminar esta base de datos completa? Se borrará también de Supabase, incluidos inventario y conteos de esta sesión.")) return;
+
+    const sessionToDelete = activeSessionId;
+
+    if(sb && sessionToDelete){
+      setCloudStatus("syncing","⏳ Eliminando de la nube…");
+      try{
+        const {error}=await sb.from("sesiones_conteo").delete().eq("id",sessionToDelete);
+        if(error) throw error;
+        try{
+          if(realtimeChannel){
+            await sb.removeChannel(realtimeChannel);
+            realtimeChannel = null;
+          }
+        }catch(e){}
+        activeSessionId = null;
+        setCloudStatus("ok","☁ Sin conteo activo");
+      }catch(err){
+        console.error("Eliminar base nube:",err);
+        setCloudStatus("error","⚠ No se pudo eliminar de la nube");
+        showToast("⚠ No se eliminó la base porque Supabase devolvió un error.");
+        return;
+      }
+    }
+
+    DB = [];
+    fileMeta = null;
+    barcodeIndex = new Map();
+    activeSessionId = null;
+    localStorage.removeItem(STORAGE_KEY);
+    renderDbInfo();
+    renderDepositos();
+    renderControl();
+    refreshSummary();
+    $("#scanResult").innerHTML = "";
+    $("#unifiedSearchResults").innerHTML = "";
+    $("#hardwareBarcodeInput").value = "";
+    showToast("🗑 Base de datos eliminada localmente y en la nube.");
+  });
+
+  loadDb();
+  populateControlFilters();
+  renderDbInfo();
+  renderDepositos();
+  renderControl();
+  refreshSummary();
+
+  // La nube tiene prioridad para permitir continuar desde cualquier navegador/dispositivo.
+  loadLatestCloudSession();
+
+  window.addEventListener("online", ()=>{ setCloudStatus("syncing","⏳ Reconectando…"); loadLatestCloudSession(); });
+  window.addEventListener("offline", ()=>setCloudStatus("offline","⚠ Sin conexión · guardado local"));
+
+}
+
+document.addEventListener("visibilitychange", ()=>{
+  if(document.hidden) stopScanner();
+});
+
+window.addEventListener("pagehide", ()=>{ saveDb(); stopScanner(); });
+window.addEventListener("beforeunload", stopScanner);
+
+if(document.readyState === "loading"){
+  document.addEventListener("DOMContentLoaded", init);
+}else{
+  init();
+}
+</script>
+</body>
+</html>
